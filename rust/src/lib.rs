@@ -17,6 +17,8 @@ extern crate std;
 #[cfg(doctest)]
 pub struct ReadmeDoctests;
 
+pub use bytes::Bytes;
+
 mod id;
 pub use id::*;
 
@@ -25,3 +27,16 @@ pub use id_error::*;
 
 mod id_encoding;
 pub use id_encoding::*;
+
+mod repository;
+pub use repository::*;
+
+#[cfg(feature = "alloc")]
+mod heap;
+#[cfg(feature = "alloc")]
+pub use heap::*;
+
+#[cfg(feature = "std")]
+mod fs;
+#[cfg(feature = "std")]
+pub use fs::*;
