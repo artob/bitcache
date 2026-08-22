@@ -1,0 +1,15 @@
+# See: https://dart.dev/tools/pub/pubspec
+---
+name: bitcache
+version: 0.0.0
+description: >-
+  Bitcache is a distributed content-addressable storage (CAS) system.
+homepage: https://bitcache.dev
+repository: https://github.com/artob/bitcache
+issue_tracker: https://github.com/artob/bitcache/issues
+dev_dependencies:
+  distrib: ^0.0.0
+  lints: ^6.0.0
+  test: ^1.25.0
+environment:
+  sdk: ^3.11.0

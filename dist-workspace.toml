@@ -1,0 +1,14 @@
+# See: https://axodotdev.github.io/cargo-dist/book/reference/config.html
+
+[workspace]
+members = ["cargo:rust"]
+
+[dist]
+cargo-dist-version = "0.32.0"
+ci = "github"
+installers = []
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+install-path = "CARGO_HOME"
+install-updater = false
+precise-builds = true
+features = ["cli"]

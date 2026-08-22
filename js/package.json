@@ -1,0 +1,58 @@
+{
+  "name": "bitcache.js",
+  "version": "0.0.0",
+  "description": "Bitcache is a distributed content-addressable storage (CAS) system.",
+  "homepage": "https://bitcache.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/artob/bitcache.git"
+  },
+  "bugs": {
+    "url": "https://github.com/artob/bitcache/issues"
+  },
+  "author": {
+    "name": "Arto Bendiken",
+    "email": "arto@bendiken.net",
+    "url": "https://ar.to"
+  },
+  "license": "Unlicense",
+  "keywords": [],
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "UNLICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --out-dir dist",
+    "clean": "rm -rf dist",
+    "prepare": "bun run build"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "latest",
+    "distrib": "^0.0.0",
+    "tsup": "latest",
+    "typescript": "^5.4.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

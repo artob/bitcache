@@ -1,0 +1,37 @@
+# {{ project.title }}.py: {{ project.title }} for Python
+
+{% render 'header/badges/python', package: package %}
+
+**{{ project.summary }}**
+
+{% render 'header/toc' %}
+
+## ✨ Features
+
+- Available both as the command-line tool [`bitcache`] and as a polyglot library.
+- Polyglot software also available for Dart, Ruby, Rust, and TypeScript.
+- Cuts red tape: 100% free and unencumbered public domain software.
+
+## 🛠️ Prerequisites
+
+- [{{ package.language.label }}] {{ package.language.minimum_version }}+
+
+## ⬇️ Installation
+
+## 👉 Examples
+
+## 📚 Reference
+
+## 👨‍💻 Development
+
+```bash
+git clone {{ github.repository.url }}
+```
+
+---
+
+{% render 'footer/share', title: project.title, url: github.repository.link %}
+
+[`bitcache`]: {{ github.repository.link }}#command-line-interface
+
+[Python]: https://python.org

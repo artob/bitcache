@@ -1,0 +1,2 @@
+Feature         | Version | Summary
+`serde`         | 1.0     | Derives `serde::{Serialize, Deserialize}`

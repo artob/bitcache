@@ -1,0 +1,45 @@
+# See: https://packaging.python.org/en/latest/tutorials/packaging-projects/
+# See: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
+
+[build-system]
+requires = ["uv_build>=0.10.8,<0.13.0"]
+build-backend = "uv_build"
+
+[project]
+name = "bitcache"
+description = "Bitcache is a distributed content-addressable storage (CAS) system."
+readme = "README.md"
+authors = [{ name = "Arto Bendiken", email = "arto@bendiken.net" }]
+license = "Unlicense"
+license-files = ["UNLICENSE"]
+version = "0.0.0"
+
+requires-python = ">=3.14"
+dependencies = []
+
+keywords = []
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: Public Domain",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.optional-dependencies]
+dev = ["distrib.sh>=0.0.0"]
+
+[project.urls]
+Homepage = "https://bitcache.dev"
+Repository = "https://github.com/artob/bitcache"
+Changelog = "https://github.com/artob/bitcache/blob/master/CHANGES.md"
+Releases = "https://github.com/artob/bitcache/releases"
+Issues = "https://github.com/artob/bitcache/issues"
+Documentation = "https://github.com/artob/bitcache/blob/master/python/README.md"
+
+[tool.uv.build-backend]
+module-name = "bitcache"

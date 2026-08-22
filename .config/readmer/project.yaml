@@ -1,0 +1,6 @@
+# See: https://github.com/artob/readmer#template-variables
+---
+label: Bitcache
+title: Bitcache
+summary:
+  Bitcache is a distributed content-addressable storage (CAS) system.

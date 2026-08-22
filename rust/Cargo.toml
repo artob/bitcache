@@ -1,0 +1,70 @@
+# See: https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "bitcache"
+version = "0.0.0"
+authors = ["Arto Bendiken"]
+edition = "2024"
+rust-version = "1.88"
+description = "Bitcache is a distributed content-addressable storage (CAS) system."
+#documentation = "https://docs.rs/bitcache"
+readme = true
+homepage = "https://bitcache.dev"
+repository = "https://github.com/artob/bitcache"
+license = "Unlicense"
+keywords = ["content-addressed", "content-addressable", "content-addressing"]
+categories = ["command-line-utilities", "caching", "filesystem"]
+publish = true
+
+# See: https://readmer.dev
+[package.metadata.readmer.project]
+title = "Bitcache"
+summary = "Bitcache is a distributed content-addressable storage (CAS) system."
+
+[features]
+default = ["all", "std"]
+all = []
+alloc = ["serde?/alloc"]
+cli = ["std", "clientele", "dep:clap"]
+std = ["derive_more/std", "alloc"]
+unstable = []
+
+# Interoperability:
+interops = ["serde"]
+serde = ["dep:serde", "alloc"]
+
+[dependencies]
+derive_more = { version = "2", default-features = false, features = ["display", "from_str"] }
+thiserror = { version = "2", default-features = false }
+
+# Interoperability:
+#bs58 = { version = "0.5", default-features = false, optional = true }
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+
+# CLI:
+clap = { version = "4.5", default-features = false, optional = true }
+clientele = { version = "0.3.8", features = [], optional = true }
+
+[dev-dependencies]
+distrib = { version = "0", default-features = false, features = ["alloc"] }
+
+# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[bin]]
+name = "bitcache"
+path = "src/main.rs"
+required-features = ["cli"]
+
+# See: https://github.com/cargo-bins/cargo-binstall/blob/main/SUPPORT.md
+[package.metadata.binstall]
+disabled-strategies = ["quick-install"]
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[patch.crates-io]

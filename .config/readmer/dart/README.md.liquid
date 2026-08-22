@@ -1,0 +1,37 @@
+# {{ project.title }}.dart: {{ project.title }} for Dart
+
+{% render 'header/badges/dart', package: package %}
+
+**{{ project.summary }}**
+
+{% render 'header/toc' %}
+
+## ✨ Features
+
+- Available both as the command-line tool [`bitcache`] and as a polyglot library.
+- Polyglot software also available for Python, Ruby, Rust, and TypeScript.
+- Cuts red tape: 100% free and unencumbered public domain software.
+
+## 🛠️ Prerequisites
+
+- [{{ package.language.label }}] {{ package.language.minimum_version }}+
+
+## ⬇️ Installation
+
+## 👉 Examples
+
+## 📚 Reference
+
+## 👨‍💻 Development
+
+```bash
+git clone {{ github.repository.url }}
+```
+
+---
+
+{% render 'footer/share', title: project.title, url: github.repository.link %}
+
+[`bitcache`]: {{ github.repository.link }}#command-line-interface
+
+[Dart]: https://dart.dev

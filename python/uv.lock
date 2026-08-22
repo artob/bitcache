@@ -1,0 +1,33 @@
+version = 1
+revision = 3
+requires-python = ">=3.14"
+
+[options]
+exclude-newer = "2026-07-25T15:08:29.169203Z"
+exclude-newer-span = "P3D"
+
+[options.exclude-newer-package]
+distrib-sh = false
+
+[[package]]
+name = "distrib-sh"
+version = "0.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/96/c7764fc6e1902e41efaf198bf0b08fa5c32298a5ca268bb99e7ed4610eb9/distrib_sh-0.0.0.tar.gz", hash = "sha256:f5547d52b0aaefcc975466808daec448746b010c869239048f286ab7e8e2907b", size = 2791, upload-time = "2026-07-25T16:49:12.541Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c0/15/96fcc4d0d868fff4165c54610eaea506afe025f06998d6a87c53fc7e5834/distrib_sh-0.0.0-py3-none-any.whl", hash = "sha256:fd4e62738e562a492fda3df8f98d416d0183c078c47bea22c628a74bef7e6d37", size = 3671, upload-time = "2026-07-25T16:49:11.277Z" },
+]
+
+[[package]]
+name = "bitcache"
+version = "0.0.0"
+source = { editable = "." }
+
+[package.optional-dependencies]
+dev = [
+    { name = "distrib-sh" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "distrib-sh", marker = "extra == 'dev'", specifier = ">=0.0.0" }]
+provides-extras = ["dev"]

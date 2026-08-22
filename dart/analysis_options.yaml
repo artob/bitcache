@@ -1,0 +1,3 @@
+# See: https://dart.dev/tools/analysis
+---
+include: package:lints/recommended.yaml

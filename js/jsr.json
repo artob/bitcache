@@ -1,0 +1,17 @@
+{
+  "name": "@artob/bitcache",
+  "version": "0.0.0",
+  "license": "Unlicense",
+  "exports": "./src/version.ts",
+  "imports": {
+    "std-env": "npm:std-env@^4.2.0"
+  },
+  "publish": {
+    "include": [
+      "README.md",
+      "UNLICENSE",
+      "jsr.json",
+      "src/version.ts"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+# See: https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "bitcache"
+version = "0.0.0"
+edition = "2024"
+#rust-version = "1.85"
+publish = false
+
+[features]
+default = ["all", "std"]
+all = []
+alloc = ["distrib/alloc"]
+std = ["alloc", "distrib/std"]
+unstable = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+distrib = { version = "0.0.1", default-features = false, features = ["export", "ruby"] }
+bitcache_rs = { package = "bitcache", version = "0.0.0" }
+rb-sys = { version = "0.9", features = ["stable-api-compiled-fallback"] }
+
+[dev-dependencies]
+rb-sys-test-helpers = "0.3"
+
+[build-dependencies]
+distrib-build = { version = "0.0.1", default-features = false, features = ["std", "ruby"] }
