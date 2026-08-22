@@ -4,6 +4,7 @@ use clientele::{
     StandardOptions, SysexitsError,
     crates::clap::{Parser, Subcommand},
 };
+use std::path::PathBuf;
 
 /// Bitcache is a distributed content-addressable storage (CAS) system.
 #[derive(Debug, Parser)]
@@ -21,6 +22,14 @@ struct Options {
 enum Command {
     /// Initialize a new repository.
     Init {},
+
+    /// Compute the hash of a file.
+    #[clap(aliases = ["id", "hash"])]
+    Identify {
+        /// The path to the file to hash.
+        #[arg(value_name = "FILES")]
+        paths: Vec<PathBuf>,
+    },
 }
 
 pub fn main() -> Result<(), SysexitsError> {
@@ -50,5 +59,11 @@ pub fn main() -> Result<(), SysexitsError> {
 
     match options.command.unwrap() {
         Command::Init {} => Ok(()),
+        Command::Identify { paths } => {
+            for path in paths {
+                println!("{}", path.display());
+            }
+            Ok(())
+        },
     }
 }

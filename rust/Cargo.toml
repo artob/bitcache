@@ -23,22 +23,29 @@ summary = "Bitcache is a distributed content-addressable storage (CAS) system."
 
 [features]
 default = ["all", "std"]
-all = []
+all = ["base58"]
 alloc = ["serde?/alloc"]
-cli = ["std", "clientele", "dep:clap"]
+cli = ["std", "dep:clientele", "dep:clap"]
 std = ["derive_more/std", "alloc"]
 unstable = []
+
+# Features:
+base58 = ["dep:bs58"]
 
 # Interoperability:
 interops = ["serde"]
 serde = ["dep:serde", "alloc"]
 
 [dependencies]
+arrayvec = { version = "0.7", default-features = false }
+blake3 = { version = "1.8", default-features = false }
 derive_more = { version = "2", default-features = false, features = ["display", "from_str"] }
 thiserror = { version = "2", default-features = false }
 
+# Features:
+bs58 = { version = "0.5", default-features = false, optional = true }
+
 # Interoperability:
-#bs58 = { version = "0.5", default-features = false, optional = true }
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
 
 # CLI:
