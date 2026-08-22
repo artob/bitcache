@@ -1,7 +1,7 @@
 # See: https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [package]
-name = "bitcache-iroh"
+name = "bitcache-fs"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -20,9 +20,9 @@ publish.workspace = true
 default = ["all", "std"]
 all = []
 alloc = []
-std = ["alloc"]
+std = ["alloc", "cap-std/fs_utf8"]
 unstable = []
 
 [dependencies]
 bitcache-core = { workspace = true }
-iroh = { version = "1.0", default-features = false }
+cap-std = { version = "4.0", default-features = false }

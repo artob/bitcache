@@ -1,6 +1,6 @@
 // This is free and unencumbered software released into the public domain.
 
-use crate::{Bytes, Id};
+use crate::{Blob, Id};
 
 pub trait Repository {
     fn is_empty(&self) -> bool {
@@ -15,11 +15,11 @@ pub trait Repository {
         self.get(id).is_some()
     }
 
-    fn get(&self, id: &Id) -> Option<Bytes> {
+    fn get(&self, id: &Id) -> Option<Blob> {
         None
     }
 
     fn get_len(&self, id: &Id) -> Option<u64> {
-        self.get(id).map(|bytes| bytes.len() as u64)
+        self.get(id).map(|blob| blob.len())
     }
 }

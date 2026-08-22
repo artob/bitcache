@@ -24,4 +24,5 @@ std = ["alloc"]
 unstable = []
 
 [dependencies]
+bitcache-core = { workspace = true }
 opendal = { version = "0.58", default-features = false }

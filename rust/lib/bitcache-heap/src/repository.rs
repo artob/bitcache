@@ -1,10 +1,10 @@
 // This is free and unencumbered software released into the public domain.
 
-use crate::{Bytes, Id, Repository};
+use bitcache_core::{Blob, Id, Repository};
 use hashbrown::HashMap;
 
 #[derive(Clone, Debug, Default)]
-pub struct HeapRepository(HashMap<Id, Bytes>);
+pub struct HeapRepository(HashMap<Id, Blob>);
 
 impl HeapRepository {
     pub fn new() -> Self {
@@ -14,14 +14,14 @@ impl HeapRepository {
 
 impl Repository for HeapRepository {
     fn len(&self) -> usize {
-        0 // TODO
+        self.0.len()
     }
 
     fn contains(&self, id: &Id) -> bool {
-        false // TODO
+        self.0.contains_key(id)
     }
 
-    fn get(&self, id: &Id) -> Option<Bytes> {
-        None // TODO
+    fn get(&self, id: &Id) -> Option<Blob> {
+        self.0.get(id).cloned()
     }
 }

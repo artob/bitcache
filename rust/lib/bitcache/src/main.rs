@@ -66,7 +66,7 @@ pub fn main() -> Result<(), SysexitsError> {
         Command::Init {} => Ok(()),
         Command::Identify { format, paths } => {
             for path in paths {
-                let mut hasher = blake3::Hasher::new();
+                let mut hasher = bitcache_core::Hasher::new();
                 let input_file = std::fs::File::open(&path)?;
                 hasher.update_reader(input_file)?;
                 let id: Id = hasher.finalize().into();

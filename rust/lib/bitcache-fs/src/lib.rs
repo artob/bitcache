@@ -17,4 +17,7 @@ extern crate std;
 #[cfg(doctest)]
 pub struct ReadmeDoctests;
 
-pub use bitcache_core::*;
+#[cfg(feature = "std")]
+mod repository;
+#[cfg(feature = "std")]
+pub use repository::*;

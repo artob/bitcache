@@ -1,7 +1,7 @@
 # See: https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [package]
-name = "bitcache-iroh"
+name = "bitcache-heap"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -19,10 +19,10 @@ publish.workspace = true
 [features]
 default = ["all", "std"]
 all = []
-alloc = []
+alloc = ["hashbrown/alloc"]
 std = ["alloc"]
 unstable = []
 
 [dependencies]
 bitcache-core = { workspace = true }
-iroh = { version = "1.0", default-features = false }
+hashbrown = { version = "0.17", default-features = false, features = ["default-hasher"]  }
