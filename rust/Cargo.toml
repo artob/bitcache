@@ -26,7 +26,7 @@ default = ["all", "std"]
 all = ["base58"]
 alloc = ["serde?/alloc"]
 cli = ["std", "dep:clientele", "dep:clap"]
-std = ["derive_more/std", "alloc"]
+std = ["alloc", "blake3/std", "derive_more/std"]
 unstable = []
 
 # Features:
@@ -34,7 +34,7 @@ base58 = ["dep:bs58"]
 
 # Interoperability:
 interops = ["serde"]
-serde = ["dep:serde", "alloc"]
+serde = ["dep:serde", "alloc", "blake3/serde"]
 
 [dependencies]
 arrayvec = { version = "0.7", default-features = false }

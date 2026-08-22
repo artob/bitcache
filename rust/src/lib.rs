@@ -22,3 +22,6 @@ pub use id::*;
 
 mod id_error;
 pub use id_error::*;
+
+mod id_encoding;
+pub use id_encoding::*;

@@ -1,5 +1,6 @@
 // This is free and unencumbered software released into the public domain.
 
+use bitcache::{Id, IdEncoding};
 use clientele::{
     StandardOptions, SysexitsError,
     crates::clap::{Parser, Subcommand},
@@ -26,7 +27,11 @@ enum Command {
     /// Compute the hash of a file.
     #[clap(aliases = ["id", "hash"])]
     Identify {
-        /// The path to the file to hash.
+        /// The format to use for the hash output.
+        #[arg(short, long, value_name = "FORMAT", default_value = "hex")]
+        format: IdEncoding,
+
+        /// The paths to the file(s) to hash.
         #[arg(value_name = "FILES")]
         paths: Vec<PathBuf>,
     },
@@ -59,9 +64,17 @@ pub fn main() -> Result<(), SysexitsError> {
 
     match options.command.unwrap() {
         Command::Init {} => Ok(()),
-        Command::Identify { paths } => {
+        Command::Identify { format, paths } => {
             for path in paths {
-                println!("{}", path.display());
+                let mut hasher = blake3::Hasher::new();
+                let input_file = std::fs::File::open(&path)?;
+                hasher.update_reader(input_file)?;
+                let id: Id = hasher.finalize().into();
+                match format {
+                    IdEncoding::Hex => println!("{}", id.to_hex()),
+                    #[cfg(feature = "base58")]
+                    IdEncoding::Base58 => println!("{}", id.to_base58()),
+                }
             }
             Ok(())
         },
