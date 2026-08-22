@@ -1,0 +1,72 @@
+# See: https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "bitcache"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description.workspace = true
+#documentation.workspace = true
+readme.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
+
+# See: https://readmer.dev
+[package.metadata.readmer.project]
+title = "Bitcache"
+summary = "Bitcache is a distributed content-addressable storage (CAS) system."
+
+[features]
+default = ["all", "std"]
+all = ["base58"]
+alloc = ["serde?/alloc"]
+cli = ["std", "dep:clientele", "dep:clap"]
+std = ["alloc", "blake3/std", "derive_more/std"]
+unstable = []
+
+# Features:
+base58 = ["dep:bs58"]
+
+# Interoperability:
+interops = ["serde"]
+serde = ["dep:serde", "alloc", "blake3/serde"]
+
+[dependencies]
+arrayvec = { version = "0.7", default-features = false }
+blake3 = { version = "1.8", default-features = false }
+bytes = { version = "1", default-features = false }
+derive_more = { version = "2", default-features = false, features = ["display", "from_str"] }
+hashbrown = { version = "0.17", default-features = false }
+thiserror = { version = "2", default-features = false }
+
+# Features:
+bs58 = { version = "0.5", default-features = false, optional = true }
+
+# Interoperability:
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
+
+# CLI:
+clap = { version = "4.5", default-features = false, optional = true }
+clientele = { version = "0.3.8", features = [], optional = true }
+
+[dev-dependencies]
+distrib = { version = "0", default-features = false, features = ["alloc"] }
+
+# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[bin]]
+name = "bitcache"
+path = "src/main.rs"
+required-features = ["cli"]
+
+# See: https://github.com/cargo-bins/cargo-binstall/blob/main/SUPPORT.md
+[package.metadata.binstall]
+disabled-strategies = ["quick-install"]

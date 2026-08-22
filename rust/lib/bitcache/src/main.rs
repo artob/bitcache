@@ -55,7 +55,7 @@ pub fn main() -> Result<(), SysexitsError> {
 
     // Print the program license, if requested:
     if options.flags.license {
-        print!("{}", include_str!("../UNLICENSE"));
+        print!("{}", include_str!("../../../UNLICENSE"));
         return Ok(());
     }
 
