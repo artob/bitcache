@@ -49,6 +49,9 @@ pub mod sync;
 mod blob;
 pub use blob::*;
 
+mod blob_metadata;
+pub use blob_metadata::*;
+
 mod id;
 pub use id::*;
 

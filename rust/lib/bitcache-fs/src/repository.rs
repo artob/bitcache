@@ -1,6 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
-use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream};
+use bitcache_core::{
+    Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream,
+};
 use cap_std::{
     ambient_authority,
     fs_utf8::{Dir, camino::Utf8Path},
@@ -49,6 +51,19 @@ impl FsRepository {
     /// The storage path for the blob with the given ID.
     fn path(id: &Id) -> String {
         id.to_hex().as_str().into()
+    }
+
+    /// Derives blob metadata from the given file metadata.
+    fn blob_metadata(metadata: &cap_std::fs::Metadata) -> BlobMetadata {
+        BlobMetadata::new(metadata.len())
+            .with_created(
+                metadata
+                    .created()
+                    .or_else(|_| metadata.modified())
+                    .ok()
+                    .map(|time| time.into_std()),
+            )
+            .with_accessed(metadata.accessed().ok().map(|time| time.into_std()))
     }
 
     /// Collects the IDs of the contained blobs, in ascending order.
@@ -162,8 +177,15 @@ impl Repository for FsRepository {
     }
 
     async fn get(&self, id: &Id) -> Result<Option<Blob>> {
-        match self.0.read(Self::path(id)) {
-            Ok(data) => Ok(Some(Blob::new(id.clone(), data))),
+        let path = Self::path(id);
+        match self.0.read(&path) {
+            Ok(data) => {
+                let mut blob = Blob::new_unchecked(id.clone(), data);
+                if let Ok(metadata) = self.0.metadata(&path) {
+                    blob = blob.with_metadata(Self::blob_metadata(&metadata));
+                }
+                Ok(Some(blob))
+            },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error),
         }

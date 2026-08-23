@@ -1,7 +1,9 @@
 // This is free and unencumbered software released into the public domain.
 
 use alloc::collections::BTreeMap;
-use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream};
+use bitcache_core::{
+    Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream,
+};
 use core::{convert::Infallible, ops::Bound};
 
 /// An in-memory (heap-allocated) repository, useful for testing and caching.
@@ -9,7 +11,13 @@ use core::{convert::Infallible, ops::Bound};
 /// Blobs are kept in a sorted map, so enumeration order and cursor seeks
 /// come for free.
 #[derive(Clone, Debug, Default)]
-pub struct HeapRepository(BTreeMap<Id, Bytes>);
+pub struct HeapRepository(BTreeMap<Id, HeapEntry>);
+
+#[derive(Clone, Debug, Default)]
+struct HeapEntry {
+    data: Bytes,
+    metadata: BlobMetadata,
+}
 
 impl HeapRepository {
     /// Creates a new, empty repository.
@@ -32,19 +40,20 @@ impl Repository for HeapRepository {
     }
 
     async fn get(&self, id: &Id) -> Result<Option<Blob>, Self::Error> {
-        Ok(self
-            .0
-            .get(id)
-            .map(|data| Blob::new(id.clone(), data.clone())))
+        Ok(self.0.get(id).map(|entry| {
+            Blob::new_unchecked(id.clone(), entry.data.clone())
+                .with_metadata(entry.metadata.clone())
+        }))
     }
 
     async fn get_len(&self, id: &Id) -> Result<Option<u64>, Self::Error> {
-        Ok(self.0.get(id).map(|data| data.len() as u64))
+        Ok(self.0.get(id).map(|entry| entry.data.len() as u64))
     }
 
     async fn put(&mut self, data: Bytes) -> Result<Id, Self::Error> {
         let id = Id::of(&data);
-        self.0.insert(id.clone(), data);
+        let metadata = BlobMetadata::new(data.len() as u64).with_created_nanos(now());
+        self.0.insert(id.clone(), HeapEntry { data, metadata });
         Ok(id)
     }
 
@@ -72,4 +81,19 @@ impl Repository for HeapRepository {
                 .map(|id| Ok(id.clone())),
         )
     }
+}
+
+/// The current time as nanoseconds since the Unix epoch, when available.
+#[cfg(feature = "std")]
+fn now() -> Option<u64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_nanos() as u64)
+}
+
+/// The current time, unavailable without `std`.
+#[cfg(not(feature = "std"))]
+fn now() -> Option<u64> {
+    None
 }

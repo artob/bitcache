@@ -1,9 +1,12 @@
 // This is free and unencumbered software released into the public domain.
 
 use crate::OpenOptions;
-use alloc::string::String;
+use alloc::{
+    borrow::{Cow, ToOwned},
+    string::{String, ToString},
+};
 use bitcache_core::{
-    Blob, Bytes, Id, ListOptions, Repository, Stream,
+    Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, Stream,
     futures_util::{StreamExt, TryFutureExt, TryStreamExt, future},
 };
 use opendal::{ErrorKind, Operator};
@@ -93,6 +96,18 @@ impl DalRepository {
     fn path(id: &Id) -> String {
         id.to_hex().as_str().into()
     }
+
+    /// Derives blob metadata from the given OpenDAL entry metadata.
+    fn blob_metadata(metadata: &opendal::Metadata) -> BlobMetadata {
+        BlobMetadata::new(metadata.content_length())
+            .with_media_type(metadata.content_type().map(|s| s.to_owned().into()))
+            .with_created_nanos(
+                metadata
+                    .last_modified()
+                    .map(|time| time.into_inner().as_nanosecond().max(0) as u64),
+            )
+            .with_expires(None) // TODO
+    }
 }
 
 impl Repository for DalRepository {
@@ -103,8 +118,16 @@ impl Repository for DalRepository {
     }
 
     async fn get(&self, id: &Id) -> Result<Option<Blob>, Self::Error> {
-        match self.0.read(&Self::path(id)).await {
-            Ok(buffer) => Ok(Some(Blob::new(id.clone(), buffer.to_bytes()))),
+        let path = Self::path(id);
+        match self.0.read(&path).await {
+            Ok(buffer) => {
+                let mut blob = Blob::new_unchecked(id.clone(), buffer.to_bytes());
+                // Best-effort metadata enrichment; failures are non-fatal.
+                if let Ok(metadata) = self.0.stat(&path).await {
+                    blob = blob.with_metadata(Self::blob_metadata(&metadata));
+                }
+                Ok(Some(blob))
+            },
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error),
         }
