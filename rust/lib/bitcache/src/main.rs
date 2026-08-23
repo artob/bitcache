@@ -1,6 +1,7 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache::IdEncoding;
+use bitcache_fs::FsRepository;
 use clientele::{
     StandardOptions, SysexitsError,
     crates::clap::{Parser, Subcommand},
@@ -35,10 +36,22 @@ enum Command {
 
     /// Initialize a new repository in `./.bitcache/`.
     Init {},
+
+    /// Store the given file(s) into the repository.
+    Put {
+        /// The format to use for the hash output.
+        #[arg(short, long, value_name = "FORMAT", default_value = "hex")]
+        format: IdEncoding,
+
+        /// The paths to the file(s) to store.
+        #[arg(value_name = "FILES")]
+        paths: Vec<PathBuf>,
+    },
 }
 
 /// The entry point for the `bitcache` command-line interface.
-pub fn main() -> Result<(), SysexitsError> {
+#[tokio::main]
+pub async fn main() -> Result<(), SysexitsError> {
     // Load environment variables from `.env`:
     clientele::dotenv().ok();
 
@@ -77,8 +90,20 @@ pub fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Init {} => {
-            use bitcache_fs::FsRepository;
             let _repository = FsRepository::create(".bitcache")?;
+            Ok(())
+        },
+
+        Command::Put { format, paths } => {
+            let mut repository = FsRepository::open(".bitcache")?;
+            for path in paths {
+                let id = repository.put_file(&path).await?;
+                match format {
+                    IdEncoding::Hex => println!("{}", id.to_hex()),
+                    #[cfg(feature = "base58")]
+                    IdEncoding::Base58 => println!("{}", id.to_base58()),
+                }
+            }
             Ok(())
         },
     }

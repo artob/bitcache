@@ -25,7 +25,7 @@ summary = "Bitcache is a distributed content-addressable storage (CAS) system."
 default = ["all", "std"]
 all = ["base58"]
 alloc = ["bitcache-core/alloc"]
-cli = ["std", "bitcache-core/clap", "dep:bitcache-fs", "dep:clientele", "dep:clap"]
+cli = ["std", "tokio", "bitcache-core/clap", "dep:bitcache-fs", "dep:clientele", "dep:clap"]
 std = ["alloc", "bitcache-core/std"]
 unstable = []
 
@@ -39,8 +39,8 @@ iroh = ["dep:bitcache-iroh"]
 opendal = ["dep:bitcache-opendal"]
 
 # Interoperability:
-interops = ["serde"]
 serde = ["bitcache-core/serde"]
+tokio = ["std", "bitcache-core/tokio", "bitcache-fs?/tokio", "dep:tokio", "tokio/fs", "tokio/io-util", "tokio/macros", "tokio/rt-multi-thread"]
 
 [dependencies]
 bitcache-core = { workspace = true }
@@ -52,6 +52,7 @@ bitcache-opendal = { workspace = true, optional = true }
 # CLI:
 clap = { workspace = true, optional = true }
 clientele = { version = "0.3.8", features = [], optional = true }
+tokio = { version = "1", default-features = false, optional = true }
 
 [dev-dependencies]
 distrib = { version = "0", default-features = false, features = ["alloc"] }

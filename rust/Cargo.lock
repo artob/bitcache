@@ -419,6 +419,7 @@ dependencies = [
  "clap",
  "clientele",
  "distrib",
+ "tokio",
 ]
 
 [[package]]

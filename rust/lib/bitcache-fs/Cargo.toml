@@ -18,10 +18,13 @@ publish.workspace = true
 
 [features]
 default = ["all", "std"]
-all = []
+all = ["tokio"]
 alloc = ["bitcache-core/alloc"]
 std = ["alloc", "bitcache-core/std", "cap-std/fs_utf8"]
 unstable = []
+
+# Interoperability:
+tokio = ["std", "bitcache-core/tokio"]
 
 [dependencies]
 bitcache-core = { workspace = true }

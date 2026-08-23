@@ -29,11 +29,13 @@ pub use blake3::Hasher;
 pub use bytes::Bytes;
 
 // Re-exported for downstream crates (e.g. repository implementations), so
-// that they needn't depend on the `futures-*` crates directly:
+// that they needn't depend on the `futures-*` and `tokio` crates directly:
 pub use futures_core;
 pub use futures_core::Stream;
 pub use futures_io;
 pub use futures_util;
+#[cfg(feature = "tokio")]
+pub use tokio;
 
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
