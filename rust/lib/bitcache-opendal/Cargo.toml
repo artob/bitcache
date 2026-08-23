@@ -25,4 +25,8 @@ unstable = []
 
 [dependencies]
 bitcache-core = { workspace = true }
-opendal = { version = "0.58", default-features = false }
+opendal = { version = "0.58", default-features = false, features = ["blocking"] }
+
+[dev-dependencies]
+opendal = { version = "0.58", default-features = false, features = ["services-memory"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

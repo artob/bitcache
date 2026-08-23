@@ -13,6 +13,9 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-#[doc = include_str!("../../../README.md")]
-#[cfg(doctest)]
-pub struct ReadmeDoctests;
+//#[doc = include_str!("../README.md")]
+//#[cfg(doctest)]
+//pub struct ReadmeDoctests;
+
+mod repository;
+pub use repository::*;
