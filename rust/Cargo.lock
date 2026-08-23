@@ -409,7 +409,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bitcache"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "bitcache-core",
  "clap",
@@ -419,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-core"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "arrayvec",
  "blake3",
@@ -437,7 +437,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-fs"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "bitcache-core",
  "cap-std",
@@ -445,7 +445,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-heap"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "bitcache-core",
  "futures",
@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-iroh"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "bitcache-core",
  "iroh",
@@ -461,7 +461,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-opendal"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "bitcache-core",
  "opendal",
@@ -4801,7 +4801,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6195,7 +6195,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 # See: https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace.package]
-version = "0.0.0"
+version = "0.0.1"
 authors = ["Arto Bendiken"]
 edition = "2024"
 rust-version = "1.88"
@@ -20,12 +20,12 @@ members = ["lib/*"]
 resolver = "2"
 
 [workspace.dependencies]
-bitcache = { version = "=0.0.0", default-features = false }
-bitcache-core = { version = "=0.0.0", default-features = false }
-bitcache-fs = { version = "=0.0.0", default-features = false }
-bitcache-heap = { version = "=0.0.0", default-features = false }
-bitcache-iroh = { version = "=0.0.0", default-features = false }
-bitcache-opendal = { version = "=0.0.0", default-features = false }
+bitcache = { version = "=0.0.1", default-features = false }
+bitcache-core = { version = "=0.0.1", default-features = false }
+bitcache-fs = { version = "=0.0.1", default-features = false }
+bitcache-heap = { version = "=0.0.1", default-features = false }
+bitcache-iroh = { version = "=0.0.1", default-features = false }
+bitcache-opendal = { version = "=0.0.1", default-features = false }
 
 [patch.crates-io]
 bitcache = { path = "lib/bitcache" }
