@@ -1,7 +1,7 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache::IdEncoding;
-use bitcache_core::Id;
+use bitcache_core::{Id, Repository};
 use bitcache_fs::FsRepository;
 use clientele::{
     StandardOptions, SysexitsError,
@@ -35,6 +35,9 @@ enum Command {
         paths: Vec<PathBuf>,
     },
 
+    /// Initialize a new repository in `./.bitcache/`.
+    Init {},
+
     /// Fetch blob(s) from the repository, writing their contents to stdout.
     #[clap(alias = "cat")]
     Get {
@@ -42,9 +45,6 @@ enum Command {
         #[arg(value_name = "IDS")]
         ids: Vec<Id>,
     },
-
-    /// Initialize a new repository in `./.bitcache/`.
-    Init {},
 
     /// Store the given file(s) into the repository.
     Put {
@@ -55,6 +55,14 @@ enum Command {
         /// The paths to the file(s) to store.
         #[arg(value_name = "FILES")]
         paths: Vec<PathBuf>,
+    },
+
+    /// Remove blob(s) with the given ID(s) from the repository.
+    #[clap(aliases = ["rm", "delete", "del"])]
+    Remove {
+        /// The IDs of the blob(s) to remove.
+        #[arg(value_name = "IDS")]
+        ids: Vec<Id>,
     },
 }
 
@@ -98,6 +106,11 @@ pub async fn main() -> Result<(), SysexitsError> {
             Ok(())
         },
 
+        Command::Init {} => {
+            let _repository = FsRepository::create(".bitcache")?;
+            Ok(())
+        },
+
         Command::Get { ids } => {
             let repository = FsRepository::open(".bitcache")?;
             let mut stdout = tokio::io::stdout();
@@ -115,11 +128,6 @@ pub async fn main() -> Result<(), SysexitsError> {
             Ok(())
         },
 
-        Command::Init {} => {
-            let _repository = FsRepository::create(".bitcache")?;
-            Ok(())
-        },
-
         Command::Put { format, paths } => {
             let mut repository = FsRepository::open(".bitcache")?;
             for path in paths {
@@ -128,6 +136,19 @@ pub async fn main() -> Result<(), SysexitsError> {
                     IdEncoding::Hex => println!("{}", id.to_hex()),
                     #[cfg(feature = "base58")]
                     IdEncoding::Base58 => println!("{}", id.to_base58()),
+                }
+            }
+            Ok(())
+        },
+
+        Command::Remove { ids } => {
+            let mut repository = FsRepository::open(".bitcache")?;
+            for id in ids {
+                if !repository.remove(&id).await? {
+                    eprintln!("bitcache: blob not found: {}", id.to_hex());
+                    return Err(SysexitsError::from(std::io::Error::from(
+                        std::io::ErrorKind::NotFound,
+                    )));
                 }
             }
             Ok(())
