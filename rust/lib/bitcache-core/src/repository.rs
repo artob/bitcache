@@ -74,6 +74,15 @@ pub trait Repository {
     /// Stores the given data as a blob, returning its content-derived ID.
     fn put(&mut self, data: Bytes) -> impl Future<Output = Result<Id, Self::Error>> + Send;
 
+    /// Removes the blob with the given ID, if present.
+    ///
+    /// Returns `true` if a blob was removed, or `false` if no blob with the
+    /// given ID was present.
+    fn remove(&mut self, id: &Id) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+
+    /// Removes all blobs, resetting the repository to an empty state.
+    fn clear(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
     /// Enumerates the IDs of the blobs contained in the repository.
     ///
     /// IDs are enumerated in ascending lexicographic order of their bytes

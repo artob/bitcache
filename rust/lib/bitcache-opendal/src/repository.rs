@@ -62,6 +62,25 @@ impl Repository for DalRepository {
         Ok(id)
     }
 
+    async fn remove(&mut self, id: &Id) -> Result<bool, Self::Error> {
+        // OpenDAL's `delete` is idempotent and doesn't report whether the
+        // path existed, so check for presence first.
+        let path = Self::path(id);
+        if !self.0.exists(&path).await? {
+            return Ok(false);
+        }
+        self.0.delete(&path).await?;
+        Ok(true)
+    }
+
+    async fn clear(&mut self) -> Result<(), Self::Error> {
+        let options = opendal::options::DeleteOptions {
+            recursive: true,
+            ..Default::default()
+        };
+        self.0.delete_options("", options).await
+    }
+
     fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> + Send {
         // The cursor is passed down to the backend (e.g. S3 `start-after`) as
         // a pagination hint; `options.matches` below remains the source of

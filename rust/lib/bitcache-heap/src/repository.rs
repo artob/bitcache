@@ -45,6 +45,15 @@ impl Repository for HeapRepository {
         Ok(id)
     }
 
+    async fn remove(&mut self, id: &Id) -> Result<bool, Self::Error> {
+        Ok(self.0.remove(id).is_some())
+    }
+
+    async fn clear(&mut self) -> Result<(), Self::Error> {
+        self.0.clear();
+        Ok(())
+    }
+
     fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> + Send {
         let start = match options.start_after.clone() {
             Some(id) => (Bound::Excluded(id), Bound::Unbounded),

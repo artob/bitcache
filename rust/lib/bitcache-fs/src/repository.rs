@@ -83,6 +83,25 @@ impl Repository for FsRepository {
         Ok(id)
     }
 
+    async fn remove(&mut self, id: &Id) -> Result<bool> {
+        match self.0.remove_file(Self::path(id)) {
+            Ok(()) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn clear(&mut self) -> Result<()> {
+        for id in self.collect_ids(&ListOptions::default())? {
+            match self.0.remove_file(Self::path(&id)) {
+                Ok(()) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+
     fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id>> + Send {
         stream::iter(match self.collect_ids(&options) {
             Ok(ids) => ids.into_iter().map(Ok).collect(),

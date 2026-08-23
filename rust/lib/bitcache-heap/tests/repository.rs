@@ -38,6 +38,20 @@ fn test_heap_repository() {
         let absent = Id::of(b"absent");
         assert!(!repository.contains(&absent).await.unwrap());
         assert!(repository.get(&absent).await.unwrap().is_none());
+
+        // Removal:
+        assert!(!repository.remove(&absent).await.unwrap());
+        assert!(repository.remove(&id).await.unwrap());
+        assert!(!repository.remove(&id).await.unwrap());
+        assert!(!repository.contains(&id).await.unwrap());
+        assert!(repository.is_empty().await.unwrap());
+
+        // Clearing:
+        repository.put(Bytes::from_static(b"foo")).await.unwrap();
+        repository.put(Bytes::from_static(b"bar")).await.unwrap();
+        assert_eq!(repository.len().await.unwrap(), 2);
+        repository.clear().await.unwrap();
+        assert!(repository.is_empty().await.unwrap());
     });
 }
 
