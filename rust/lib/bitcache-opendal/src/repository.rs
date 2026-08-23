@@ -34,8 +34,10 @@ impl DalRepository {
     ///
     /// The URL scheme selects the service, the authority and path locate the
     /// storage within it, and query parameters supply service configuration
-    /// options. The service's corresponding `services-*` feature must be
-    /// enabled on the `opendal` crate.
+    /// options. The service must be compiled in by enabling the same-named
+    /// feature flag on this crate (e.g. `s3`, `gcs`, `fs`; the in-memory
+    /// service is always available), or a `services-*` feature on the
+    /// `opendal` crate directly.
     ///
     /// # URL examples
     ///
