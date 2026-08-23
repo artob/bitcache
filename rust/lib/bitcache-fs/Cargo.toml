@@ -26,3 +26,5 @@ unstable = []
 [dependencies]
 bitcache-core = { workspace = true }
 cap-std = { version = "4.0", default-features = false }
+futures-core = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }

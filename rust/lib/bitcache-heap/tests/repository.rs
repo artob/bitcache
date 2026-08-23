@@ -1,8 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
-use bitcache_core::{Bytes, Id, Repository};
+use bitcache_core::{Bytes, Id, ListOptions, Repository};
 use bitcache_heap::HeapRepository;
-use futures::io::AsyncReadExt;
+use futures::{io::AsyncReadExt, stream::TryStreamExt};
 
 /// Exercises the repository on a non-Tokio executor, since the `Repository`
 /// trait and `Blob::read` are runtime-agnostic.
@@ -38,5 +38,76 @@ fn test_heap_repository() {
         let absent = Id::of(b"absent");
         assert!(!repository.contains(&absent).await.unwrap());
         assert!(repository.get(&absent).await.unwrap().is_none());
+    });
+}
+
+#[test]
+fn test_heap_repository_list() {
+    futures::executor::block_on(async {
+        let mut repository = HeapRepository::new();
+
+        let mut ids = Vec::new();
+        for n in 0u32..10 {
+            ids.push(
+                repository
+                    .put(Bytes::from(n.to_le_bytes().to_vec()))
+                    .await
+                    .unwrap(),
+            );
+        }
+        ids.sort_unstable();
+
+        assert_eq!(repository.len().await.unwrap(), 10);
+
+        // Full enumeration, in ascending ID order:
+        let listed: Vec<Id> = repository
+            .list(ListOptions::default())
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(listed, ids);
+
+        // Enumeration after an exclusive ID cursor:
+        let listed: Vec<Id> = repository
+            .list(ListOptions::new().with_start_after(ids[6].clone()))
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(listed, ids[7..]);
+
+        // Enumeration limited to a page size:
+        let listed: Vec<Id> = repository
+            .list(ListOptions::new().with_limit(4))
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(listed, ids[..4]);
+
+        // Cursor and limit combined:
+        let listed: Vec<Id> = repository
+            .list(
+                ListOptions::new()
+                    .with_start_after(ids[2].clone())
+                    .with_limit(4),
+            )
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(listed, ids[3..7]);
+
+        // Prefix filtering (on the hexadecimal encoding):
+        let hex = ids[3].to_hex();
+        let prefix = &hex.as_str()[..2];
+        let expected: Vec<Id> = ids
+            .iter()
+            .filter(|id| id.to_hex().starts_with(prefix))
+            .cloned()
+            .collect();
+        let filtered: Vec<Id> = repository
+            .list(ListOptions::new().with_prefix(prefix))
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(filtered, expected);
     });
 }

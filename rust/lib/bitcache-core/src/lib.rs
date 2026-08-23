@@ -34,5 +34,8 @@ pub use id_encoding::*;
 mod id_error;
 pub use id_error::*;
 
+mod list_options;
+pub use list_options::*;
+
 mod repository;
 pub use repository::*;

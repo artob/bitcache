@@ -1,7 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
-use bitcache_core::{Bytes, Id, Repository};
+use bitcache_core::{Bytes, Id, ListOptions, Repository};
 use bitcache_opendal::DalRepository;
+use futures_util::TryStreamExt;
 use opendal::{Operator, services::Memory};
 use tokio::io::AsyncReadExt;
 
@@ -40,4 +41,88 @@ async fn test_dal_repository() {
     assert!(!repository.contains(&absent).await.unwrap());
     assert!(repository.get(&absent).await.unwrap().is_none());
     assert!(repository.get_len(&absent).await.unwrap().is_none());
+}
+
+/// Repository futures are `Send`, so repositories can be moved into and
+/// driven from spawned tasks on multithreaded executors.
+#[tokio::test]
+async fn test_dal_repository_is_spawnable() {
+    let operator = Operator::new(Memory::default()).unwrap();
+    let mut repository = DalRepository::new(operator);
+
+    let id = tokio::spawn(async move { repository.put(Bytes::from_static(b"spawned")).await })
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(id, Id::of(b"spawned"));
+}
+
+#[tokio::test]
+async fn test_dal_repository_list() {
+    let operator = Operator::new(Memory::default()).unwrap();
+    let mut repository = DalRepository::new(operator);
+
+    let mut ids = Vec::new();
+    for n in 0u32..10 {
+        ids.push(
+            repository
+                .put(Bytes::from(n.to_le_bytes().to_vec()))
+                .await
+                .unwrap(),
+        );
+    }
+    ids.sort_unstable();
+
+    assert_eq!(repository.len().await.unwrap(), 10);
+
+    // Full enumeration, in ascending ID order:
+    let listed: Vec<Id> = repository
+        .list(ListOptions::default())
+        .try_collect()
+        .await
+        .unwrap();
+    assert_eq!(listed, ids);
+
+    // Stable pagination via an exclusive ID cursor and a page-size limit:
+    let mut paginated = Vec::new();
+    let mut cursor: Option<Id> = None;
+    loop {
+        let mut options = ListOptions::new().with_limit(3);
+        if let Some(cursor) = cursor.take() {
+            options = options.with_start_after(cursor);
+        }
+        let page: Vec<Id> = repository.list(options).try_collect().await.unwrap();
+        assert!(page.len() <= 3);
+        let Some(last) = page.last() else { break };
+        cursor = Some(last.clone());
+        paginated.extend(page);
+    }
+    assert_eq!(paginated, ids);
+
+    // Prefix filtering (on the hexadecimal encoding):
+    let hex = ids[3].to_hex();
+    let prefix = &hex.as_str()[..2];
+    let expected: Vec<Id> = ids
+        .iter()
+        .filter(|id| id.to_hex().starts_with(prefix))
+        .cloned()
+        .collect();
+    let filtered: Vec<Id> = repository
+        .list(ListOptions::new().with_prefix(prefix))
+        .try_collect()
+        .await
+        .unwrap();
+    assert_eq!(filtered, expected);
+
+    // Prefix and cursor combined:
+    let filtered: Vec<Id> = repository
+        .list(
+            ListOptions::new()
+                .with_prefix(prefix)
+                .with_start_after(expected[0].clone()),
+        )
+        .try_collect()
+        .await
+        .unwrap();
+    assert_eq!(filtered, expected[1..]);
 }

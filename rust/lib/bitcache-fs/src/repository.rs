@@ -1,11 +1,13 @@
 // This is free and unencumbered software released into the public domain.
 
-use bitcache_core::{Blob, Bytes, Id, Repository};
+use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository};
 use cap_std::{
     ambient_authority,
     fs_utf8::{Dir, camino::Utf8Path},
 };
-use std::{io::Result, string::String};
+use futures_core::Stream;
+use futures_util::stream;
+use std::{io::Result, string::String, vec::Vec};
 
 #[derive(Debug)]
 pub struct FsRepository(Dir);
@@ -22,20 +24,38 @@ impl FsRepository {
     fn path(id: &Id) -> String {
         id.to_hex().as_str().into()
     }
+
+    /// Collects the IDs of the contained blobs, in ascending order.
+    ///
+    /// Directory iteration order is unspecified, so the IDs are materialized
+    /// and sorted; this suffices for the current flat-directory layout.
+    fn collect_ids(&self, options: &ListOptions) -> Result<Vec<Id>> {
+        let mut ids = Vec::new();
+        for entry in self.0.entries()? {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            let Ok(name) = entry.file_name() else {
+                continue;
+            };
+            let Ok(id) = Id::from_hex(&name) else {
+                continue;
+            };
+            if options.matches(&id) {
+                ids.push(id);
+            }
+        }
+        ids.sort_unstable();
+        if let Some(limit) = options.limit {
+            ids.truncate(limit);
+        }
+        Ok(ids)
+    }
 }
 
 impl Repository for FsRepository {
     type Error = std::io::Error;
-
-    async fn len(&self) -> Result<usize> {
-        let mut count = 0;
-        for entry in self.0.entries()? {
-            if entry?.file_type()?.is_file() {
-                count += 1;
-            }
-        }
-        Ok(count)
-    }
 
     async fn contains(&self, id: &Id) -> Result<bool> {
         self.0.try_exists(Self::path(id))
@@ -61,5 +81,12 @@ impl Repository for FsRepository {
         let id = Id::of(&data);
         self.0.write(Self::path(&id), &data)?;
         Ok(id)
+    }
+
+    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id>> + Send {
+        stream::iter(match self.collect_ids(&options) {
+            Ok(ids) => ids.into_iter().map(Ok).collect(),
+            Err(error) => std::vec![Err(error)],
+        })
     }
 }

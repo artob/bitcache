@@ -37,6 +37,7 @@ arrayvec = { version = "0.7", default-features = false }
 blake3 = { version = "1.8", default-features = false }
 bytes = { version = "1", default-features = false }
 derive_more = { version = "2", default-features = false, features = ["display", "from_str"] }
+futures-core = { version = "0.3", default-features = false }
 futures-io = { version = "0.3", default-features = false }
 thiserror = { version = "2", default-features = false }
 tokio = { version = "1", default-features = false, optional = true }

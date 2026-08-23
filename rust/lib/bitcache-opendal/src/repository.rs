@@ -1,9 +1,23 @@
 // This is free and unencumbered software released into the public domain.
 
 use alloc::string::String;
-use bitcache_core::{Blob, Bytes, Id, Repository};
+use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository};
+use futures_core::Stream;
+use futures_util::{StreamExt, TryFutureExt, TryStreamExt, future};
 use opendal::{ErrorKind, Operator};
 
+/// A repository backed by an Apache OpenDAL [`Operator`].
+///
+/// # Enumeration order caveat
+///
+/// [`Repository::list`] yields IDs in whatever order the underlying service
+/// natively lists them. The trait's ordering contract (ascending
+/// lexicographic order, on which stable pagination relies) is only upheld on
+/// services whose native listing is lexicographic by key — as is the case
+/// for, e.g., S3, GCS, Azure Blob Storage, and OpenDAL's `memory` service.
+/// On services without that guarantee (e.g. some filesystem-like backends),
+/// enumeration still honors the prefix filter, cursor, and limit, but its
+/// order — and thus pagination stability — is not guaranteed.
 #[derive(Clone, Debug)]
 pub struct DalRepository(Operator);
 
@@ -21,16 +35,6 @@ impl DalRepository {
 
 impl Repository for DalRepository {
     type Error = opendal::Error;
-
-    async fn len(&self) -> Result<usize, Self::Error> {
-        Ok(self
-            .0
-            .list("")
-            .await?
-            .iter()
-            .filter(|entry| entry.metadata().is_file())
-            .count())
-    }
 
     async fn contains(&self, id: &Id) -> Result<bool, Self::Error> {
         self.0.exists(&Self::path(id)).await
@@ -56,5 +60,33 @@ impl Repository for DalRepository {
         let id = Id::of(&data);
         self.0.write(&Self::path(&id), data).await?;
         Ok(id)
+    }
+
+    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> + Send {
+        // The cursor is passed down to the backend (e.g. S3 `start-after`) as
+        // a pagination hint; `options.matches` below remains the source of
+        // truth for backends that don't support it.
+        let backend_options = opendal::options::ListOptions {
+            start_after: options.start_after.as_ref().map(|id| Self::path(id)),
+            // Passed down as a page-size hint; the authoritative cap is the
+            // `take` below.
+            limit: options.limit,
+            ..Default::default()
+        };
+        let limit = options.limit.unwrap_or(usize::MAX);
+        self.0
+            .lister_options("", backend_options)
+            .try_flatten_stream()
+            .try_filter_map(move |entry| {
+                let id = if entry.metadata().is_file() {
+                    Id::from_hex(entry.name())
+                        .ok()
+                        .filter(|id| options.matches(id))
+                } else {
+                    None
+                };
+                future::ready(Ok(id))
+            })
+            .take(limit)
     }
 }

@@ -25,6 +25,8 @@ unstable = []
 
 [dependencies]
 bitcache-core = { workspace = true, features = ["tokio"] }
+futures-core = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 opendal = { version = "0.58", default-features = false }
 
 [dev-dependencies]

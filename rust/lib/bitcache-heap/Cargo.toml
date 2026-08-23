@@ -19,13 +19,14 @@ publish.workspace = true
 [features]
 default = ["all", "std"]
 all = []
-alloc = ["bitcache-core/alloc", "hashbrown/alloc"]
+alloc = ["bitcache-core/alloc"]
 std = ["alloc", "bitcache-core/std"]
 unstable = []
 
 [dependencies]
 bitcache-core = { workspace = true }
-hashbrown = { version = "0.17", default-features = false, features = ["default-hasher"]  }
+futures-core = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 futures = { version = "0.3", default-features = false, features = ["executor"] }
