@@ -25,7 +25,7 @@ summary = "Bitcache is a distributed content-addressable storage (CAS) system."
 default = ["all", "std"]
 all = ["base58"]
 alloc = ["bitcache-core/alloc"]
-cli = ["std", "bitcache-core/clap", "dep:clientele", "dep:clap"]
+cli = ["std", "bitcache-core/clap", "dep:bitcache-fs", "dep:clientele", "dep:clap"]
 std = ["alloc", "bitcache-core/std"]
 unstable = []
 

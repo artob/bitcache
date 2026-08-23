@@ -21,10 +21,7 @@ struct Options {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Initialize a new repository.
-    Init {},
-
-    /// Compute the hash of a file.
+    /// Compute the BLAKE3 hash of the given file(s).
     #[clap(aliases = ["id", "hash"])]
     Identify {
         /// The format to use for the hash output.
@@ -35,6 +32,9 @@ enum Command {
         #[arg(value_name = "FILES")]
         paths: Vec<PathBuf>,
     },
+
+    /// Initialize a new repository in `./.bitcache/`.
+    Init {},
 }
 
 /// The entry point for the `bitcache` command-line interface.
@@ -64,7 +64,6 @@ pub fn main() -> Result<(), SysexitsError> {
     if options.flags.debug {}
 
     match options.command.unwrap() {
-        Command::Init {} => Ok(()),
         Command::Identify { format, paths } => {
             for path in paths {
                 let id = bitcache_core::sync::identify_file(&path)?;
@@ -74,6 +73,12 @@ pub fn main() -> Result<(), SysexitsError> {
                     IdEncoding::Base58 => println!("{}", id.to_base58()),
                 }
             }
+            Ok(())
+        },
+
+        Command::Init {} => {
+            use bitcache_fs::FsRepository;
+            let _repository = FsRepository::create(".bitcache")?;
             Ok(())
         },
     }

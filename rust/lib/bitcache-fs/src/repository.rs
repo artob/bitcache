@@ -17,6 +17,22 @@ use std::{io::Result, string::String, vec::Vec};
 pub struct FsRepository(Dir);
 
 impl FsRepository {
+    /// Creates or opens a new repository at the given directory path.
+    pub fn create(path: impl AsRef<Utf8Path>) -> Result<Self> {
+        use std::io::ErrorKind;
+        match Dir::open_ambient_dir(path.as_ref(), ambient_authority()) {
+            Ok(dir) => Ok(Self(dir)),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                Dir::create_ambient_dir_all(path.as_ref(), ambient_authority())?;
+                Ok(Self(Dir::open_ambient_dir(
+                    path.as_ref(),
+                    ambient_authority(),
+                )?))
+            },
+            Err(err) => Err(err),
+        }
+    }
+
     /// Opens the repository at the given directory path.
     pub fn open(path: impl AsRef<Utf8Path>) -> Result<Self> {
         Ok(Self(Dir::open_ambient_dir(
