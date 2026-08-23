@@ -1,7 +1,7 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache::IdEncoding;
-use bitcache_core::{Id, Repository};
+use bitcache_core::{Id, ListOptions, Repository};
 use bitcache_fs::FsRepository;
 use clientele::{
     StandardOptions, SysexitsError,
@@ -37,6 +37,26 @@ enum Command {
 
     /// Initialize a new repository in `./.bitcache/`.
     Init {},
+
+    /// List the IDs of the blobs in the repository, in ascending order.
+    #[clap(alias = "ls")]
+    List {
+        /// The format to use for the hash output.
+        #[arg(short, long, value_name = "FORMAT", default_value = "hex")]
+        format: IdEncoding,
+
+        /// List only IDs whose hexadecimal encoding begins with this prefix.
+        #[arg(short, long, value_name = "PREFIX")]
+        prefix: Option<String>,
+
+        /// List only IDs ordered strictly after this one.
+        #[arg(short = 'a', long, value_name = "ID")]
+        after: Option<Id>,
+
+        /// List at most this many IDs.
+        #[arg(short = 'n', long, value_name = "COUNT")]
+        limit: Option<usize>,
+    },
 
     /// Remove all blobs from the repository.
     Clear {
@@ -142,6 +162,36 @@ pub async fn main() -> Result<(), SysexitsError> {
             }
             use tokio::io::AsyncWriteExt;
             stdout.flush().await?;
+            Ok(())
+        },
+
+        Command::List {
+            format,
+            prefix,
+            after,
+            limit,
+        } => {
+            use bitcache_core::futures_util::StreamExt;
+            let mut options = ListOptions::new();
+            if let Some(prefix) = prefix {
+                if prefix.len() > 64 || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    eprintln!("bitcache: invalid ID prefix: {}", prefix);
+                    return Err(SysexitsError::EX_USAGE);
+                }
+                options = options.with_prefix(&prefix);
+            }
+            options.after = after;
+            options.limit = limit;
+            let repository = FsRepository::open(".bitcache")?;
+            let mut ids = std::pin::pin!(repository.list(options));
+            while let Some(id) = ids.next().await {
+                let id = id?;
+                match format {
+                    IdEncoding::Hex => println!("{}", id.to_hex()),
+                    #[cfg(feature = "base58")]
+                    IdEncoding::Base58 => println!("{}", id.to_base58()),
+                }
+            }
             Ok(())
         },
 

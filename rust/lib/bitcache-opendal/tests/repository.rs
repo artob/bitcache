@@ -145,7 +145,7 @@ async fn test_dal_repository_list() {
     loop {
         let mut options = ListOptions::new().with_limit(3);
         if let Some(cursor) = cursor.take() {
-            options = options.with_start_after(cursor);
+            options = options.with_after(cursor);
         }
         let page: Vec<Id> = repository.list(options).try_collect().await.unwrap();
         assert!(page.len() <= 3);
@@ -175,7 +175,7 @@ async fn test_dal_repository_list() {
         .list(
             ListOptions::new()
                 .with_prefix(prefix)
-                .with_start_after(expected[0].clone()),
+                .with_after(expected[0].clone()),
         )
         .try_collect()
         .await

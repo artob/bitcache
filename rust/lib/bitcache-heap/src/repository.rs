@@ -58,7 +58,7 @@ impl Repository for HeapRepository {
     }
 
     fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> + Send {
-        let start = match options.start_after.clone() {
+        let start = match options.after.clone() {
             Some(id) => (Bound::Excluded(id), Bound::Unbounded),
             None => (Bound::Unbounded, Bound::Unbounded),
         };

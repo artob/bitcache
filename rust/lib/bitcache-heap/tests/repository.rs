@@ -83,7 +83,7 @@ fn test_heap_repository_list() {
 
         // Enumeration after an exclusive ID cursor:
         let listed: Vec<Id> = repository
-            .list(ListOptions::new().with_start_after(ids[6].clone()))
+            .list(ListOptions::new().with_after(ids[6].clone()))
             .try_collect()
             .await
             .unwrap();
@@ -99,11 +99,7 @@ fn test_heap_repository_list() {
 
         // Cursor and limit combined:
         let listed: Vec<Id> = repository
-            .list(
-                ListOptions::new()
-                    .with_start_after(ids[2].clone())
-                    .with_limit(4),
-            )
+            .list(ListOptions::new().with_after(ids[2].clone()).with_limit(4))
             .try_collect()
             .await
             .unwrap();

@@ -15,11 +15,11 @@ pub struct ListOptions {
     ///
     /// This is an exclusive cursor: passing the last ID of one page as the
     /// cursor for the next yields a stable paginated view.
-    pub start_after: Option<Id>,
+    pub after: Option<Id>,
 
     /// Enumerate at most this many IDs.
     ///
-    /// Together with [`ListOptions::start_after`], this bounds one page of a
+    /// Together with [`ListOptions::after`], this bounds one page of a
     /// paginated view.
     pub limit: Option<usize>,
 }
@@ -41,8 +41,8 @@ impl ListOptions {
     }
 
     /// Restricts enumeration to IDs ordered strictly after the given ID.
-    pub fn with_start_after(mut self, id: Id) -> Self {
-        self.start_after = Some(id);
+    pub fn with_after(mut self, id: Id) -> Self {
+        self.after = Some(id);
         self
     }
 
@@ -62,8 +62,8 @@ impl ListOptions {
                 return false;
             }
         }
-        if let Some(start_after) = &self.start_after {
-            if id <= start_after {
+        if let Some(after) = &self.after {
+            if id <= after {
                 return false;
             }
         }

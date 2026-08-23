@@ -87,8 +87,8 @@ pub trait Repository {
     ///
     /// IDs are enumerated in ascending lexicographic order of their bytes
     /// (equivalently, of their hexadecimal encodings), so that repeated calls
-    /// with a [`ListOptions::start_after`] cursor yield a stable paginated
-    /// view even over very large repositories. See [`ListOptions`] for the
+    /// with a [`ListOptions::after`] cursor yield a stable paginated view
+    /// even over very large repositories. See [`ListOptions`] for the
     /// supported prefix filter, cursor, and page-size limit.
     fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> + Send;
 }
