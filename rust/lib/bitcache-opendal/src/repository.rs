@@ -148,7 +148,7 @@ impl Repository for DalRepository {
         // a pagination hint; `options.matches` below remains the source of
         // truth for backends that don't support it.
         let backend_options = opendal::options::ListOptions {
-            after: options.after.as_ref().map(|id| Self::path(id)),
+            start_after: options.after.as_ref().map(|id| Self::path(id)),
             // Passed down as a page-size hint; the authoritative cap is the
             // `take` below.
             limit: options.limit,
