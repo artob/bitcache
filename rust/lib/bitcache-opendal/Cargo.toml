@@ -19,13 +19,13 @@ publish.workspace = true
 [features]
 default = ["all", "std"]
 all = []
-alloc = []
-std = ["alloc"]
+alloc = ["bitcache-core/alloc"]
+std = ["alloc", "bitcache-core/std"]
 unstable = []
 
 [dependencies]
-bitcache-core = { workspace = true }
-opendal = { version = "0.58", default-features = false, features = ["blocking"] }
+bitcache-core = { workspace = true, features = ["tokio"] }
+opendal = { version = "0.58", default-features = false }
 
 [dev-dependencies]
 opendal = { version = "0.58", default-features = false, features = ["services-memory"] }

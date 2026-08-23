@@ -19,8 +19,8 @@ publish.workspace = true
 [features]
 default = ["all", "std"]
 all = []
-alloc = []
-std = ["alloc", "cap-std/fs_utf8"]
+alloc = ["bitcache-core/alloc"]
+std = ["alloc", "bitcache-core/std", "cap-std/fs_utf8"]
 unstable = []
 
 [dependencies]

@@ -247,8 +247,10 @@ dependencies = [
  "bytes",
  "clap",
  "derive_more",
+ "futures-io",
  "serde",
  "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -264,6 +266,7 @@ name = "bitcache-heap"
 version = "0.0.0"
 dependencies = [
  "bitcache-core",
+ "futures",
  "hashbrown",
 ]
 

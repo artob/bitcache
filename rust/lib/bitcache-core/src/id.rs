@@ -34,6 +34,11 @@ impl core::fmt::Debug for Id {
 }
 
 impl Id {
+    /// Computes the ID of the given data.
+    pub fn of(data: impl AsRef<[u8]>) -> Self {
+        Self(blake3::hash(data.as_ref()))
+    }
+
     pub fn from_bytes(input: [u8; ID_LEN]) -> Self {
         Self(Hash::from(input))
     }

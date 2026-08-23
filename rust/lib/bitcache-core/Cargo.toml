@@ -18,13 +18,14 @@ publish.workspace = true
 
 [features]
 default = ["all", "std"]
-all = ["base58"]
+all = ["base58", "tokio"]
 alloc = ["serde?/alloc"]
-std = ["alloc", "blake3/std", "derive_more/std"]
+std = ["alloc", "blake3/std", "derive_more/std", "futures-io/std"]
 unstable = []
 
 # Features:
 base58 = ["dep:bs58"]
+tokio = ["std", "dep:tokio"]
 
 # Interoperability:
 interops = ["clap", "serde"]
@@ -36,7 +37,9 @@ arrayvec = { version = "0.7", default-features = false }
 blake3 = { version = "1.8", default-features = false }
 bytes = { version = "1", default-features = false }
 derive_more = { version = "2", default-features = false, features = ["display", "from_str"] }
+futures-io = { version = "0.3", default-features = false }
 thiserror = { version = "2", default-features = false }
+tokio = { version = "1", default-features = false, optional = true }
 
 # Features:
 bs58 = { version = "0.5", default-features = false, optional = true }

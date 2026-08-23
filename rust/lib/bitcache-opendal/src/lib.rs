@@ -17,5 +17,7 @@ extern crate std;
 //#[cfg(doctest)]
 //pub struct ReadmeDoctests;
 
+#[cfg(feature = "alloc")]
 mod repository;
+#[cfg(feature = "alloc")]
 pub use repository::*;

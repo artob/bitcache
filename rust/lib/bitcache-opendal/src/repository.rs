@@ -1,19 +1,16 @@
 // This is free and unencumbered software released into the public domain.
 
 use alloc::string::String;
-use bitcache_core::{Blob, Id, Repository};
-use opendal::{Operator, blocking};
+use bitcache_core::{Blob, Bytes, Id, Repository};
+use opendal::{ErrorKind, Operator};
 
 #[derive(Clone, Debug)]
-pub struct DalRepository(blocking::Operator);
+pub struct DalRepository(Operator);
 
 impl DalRepository {
     /// Creates a new repository backed by the given operator.
-    ///
-    /// Must be called from within a Tokio runtime context, since OpenDAL's
-    /// blocking API dispatches operations onto the current runtime.
-    pub fn new(operator: Operator) -> opendal::Result<Self> {
-        Ok(Self(blocking::Operator::new(operator)?))
+    pub fn new(operator: Operator) -> Self {
+        Self(operator)
     }
 
     /// The storage path for the blob with the given ID.
@@ -23,33 +20,41 @@ impl DalRepository {
 }
 
 impl Repository for DalRepository {
-    fn len(&self) -> usize {
-        self.0
+    type Error = opendal::Error;
+
+    async fn len(&self) -> Result<usize, Self::Error> {
+        Ok(self
+            .0
             .list("")
-            .map(|entries| {
-                entries
-                    .iter()
-                    .filter(|entry| entry.metadata().is_file())
-                    .count()
-            })
-            .unwrap_or(0)
+            .await?
+            .iter()
+            .filter(|entry| entry.metadata().is_file())
+            .count())
     }
 
-    fn contains(&self, id: &Id) -> bool {
-        self.0.exists(&Self::path(id)).unwrap_or(false)
+    async fn contains(&self, id: &Id) -> Result<bool, Self::Error> {
+        self.0.exists(&Self::path(id)).await
     }
 
-    fn get(&self, id: &Id) -> Option<Blob> {
-        self.0
-            .read(&Self::path(id))
-            .ok()
-            .map(|buffer| Blob::new(buffer.to_bytes()))
+    async fn get(&self, id: &Id) -> Result<Option<Blob>, Self::Error> {
+        match self.0.read(&Self::path(id)).await {
+            Ok(buffer) => Ok(Some(Blob::new(id.clone(), buffer.to_bytes()))),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
-    fn get_len(&self, id: &Id) -> Option<u64> {
-        self.0
-            .stat(&Self::path(id))
-            .ok()
-            .map(|metadata| metadata.content_length())
+    async fn get_len(&self, id: &Id) -> Result<Option<u64>, Self::Error> {
+        match self.0.stat(&Self::path(id)).await {
+            Ok(metadata) => Ok(Some(metadata.content_length())),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn put(&mut self, data: Bytes) -> Result<Id, Self::Error> {
+        let id = Id::of(&data);
+        self.0.write(&Self::path(&id), data).await?;
+        Ok(id)
     }
 }
