@@ -1,6 +1,6 @@
 // This is free and unencumbered software released into the public domain.
 
-use bitcache::{Id, IdEncoding};
+use bitcache::IdEncoding;
 use clientele::{
     StandardOptions, SysexitsError,
     crates::clap::{Parser, Subcommand},
@@ -67,10 +67,7 @@ pub fn main() -> Result<(), SysexitsError> {
         Command::Init {} => Ok(()),
         Command::Identify { format, paths } => {
             for path in paths {
-                let mut hasher = bitcache_core::Hasher::new();
-                let input_file = std::fs::File::open(&path)?;
-                hasher.update_reader(input_file)?;
-                let id: Id = hasher.finalize().into();
+                let id = bitcache_core::sync::identify_file(&path)?;
                 match format {
                     IdEncoding::Hex => println!("{}", id.to_hex()),
                     #[cfg(feature = "base58")]

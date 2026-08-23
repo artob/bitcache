@@ -20,12 +20,12 @@ publish.workspace = true
 default = ["all", "std"]
 all = ["base58", "tokio"]
 alloc = ["serde?/alloc", "futures-util/alloc"]
-std = ["alloc", "blake3/std", "derive_more/std", "futures-io/std", "futures-util/std"]
+std = ["alloc", "blake3/std", "derive_more/std", "futures-io/std", "futures-util/std", "futures-util/io"]
 unstable = []
 
 # Features:
 base58 = ["dep:bs58"]
-tokio = ["std", "dep:tokio"]
+tokio = ["std", "dep:tokio", "tokio/fs", "tokio/io-util"]
 
 # Interoperability:
 interops = ["clap", "serde"]

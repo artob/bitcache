@@ -20,6 +20,9 @@ extern crate std;
 //#[cfg(doctest)]
 //pub struct ReadmeDoctests;
 
+#[cfg(feature = "alloc")]
+pub type BoxError = alloc::boxed::Box<dyn core::error::Error + Send + Sync>;
+
 #[doc(hidden)]
 pub use blake3::Hasher;
 
@@ -31,6 +34,15 @@ pub use futures_core;
 pub use futures_core::Stream;
 pub use futures_io;
 pub use futures_util;
+
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+#[path = "async.rs"]
+pub mod r#async;
+
+#[cfg(feature = "std")]
+#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
+pub mod sync;
 
 mod blob;
 pub use blob::*;
@@ -49,3 +61,13 @@ pub use list_options::*;
 
 mod repository;
 pub use repository::*;
+
+/// Computes the [`Id`] of the given in-memory input by hashing it with BLAKE3.
+///
+/// This is the most convenient option when the input already resides in
+/// memory. For streaming inputs, see [`sync::identify_input`] and
+/// [`r#async::identify_input`]; for files, see [`sync::identify_file`] and
+/// [`r#async::identify_file`].
+pub fn identify(input: impl AsRef<[u8]>) -> Id {
+    Id(blake3::hash(input.as_ref()))
+}
