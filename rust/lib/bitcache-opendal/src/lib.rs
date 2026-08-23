@@ -23,6 +23,11 @@ extern crate std;
 //pub struct ReadmeDoctests;
 
 #[cfg(feature = "alloc")]
+mod open_options;
+#[cfg(feature = "alloc")]
+pub use open_options::*;
+
+#[cfg(feature = "alloc")]
 mod repository;
 #[cfg(feature = "alloc")]
 pub use repository::*;

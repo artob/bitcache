@@ -1,7 +1,7 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache_core::{Bytes, Id, ListOptions, Repository, futures_util::TryStreamExt};
-use bitcache_opendal::DalRepository;
+use bitcache_opendal::{DalRepository, OpenOptions};
 use opendal::{Operator, services::Memory};
 use tokio::io::AsyncReadExt;
 
@@ -53,6 +53,49 @@ async fn test_dal_repository() {
     repository.put(Bytes::from_static(b"bar")).await.unwrap();
     assert_eq!(repository.len().await.unwrap(), 2);
     repository.clear().await.unwrap();
+    assert!(repository.is_empty().await.unwrap());
+}
+
+#[tokio::test]
+async fn test_dal_repository_open() {
+    let mut repository = DalRepository::open("memory://").unwrap();
+
+    let id = repository.put(Bytes::from_static(b"opened")).await.unwrap();
+    assert!(repository.contains(&id).await.unwrap());
+
+    // Separately opened repositories are independent:
+    let other = DalRepository::open("memory://").unwrap();
+    assert!(!other.contains(&id).await.unwrap());
+
+    // Unknown schemes are rejected:
+    assert!(DalRepository::open("bogus://").is_err());
+}
+
+#[tokio::test]
+async fn test_dal_repository_open_options() {
+    // Service configuration options are passed through:
+    let repository = DalRepository::open_options(
+        "memory://",
+        OpenOptions::new().with_option("root", "/prefix"),
+    )
+    .unwrap();
+    assert!(repository.is_empty().await.unwrap());
+
+    // Layers are applied: overriding the `delete` capability is observable
+    // in the operator's reported capabilities.
+    let layer = opendal::layers::CapabilityOverrideLayer::new(|mut capability| {
+        capability.delete = false;
+        capability
+    });
+    let repository =
+        DalRepository::open_options("memory://", OpenOptions::new().with_layer(layer)).unwrap();
+    assert!(!repository.operator().info().capability().delete);
+}
+
+#[tokio::test]
+async fn test_dal_repository_from_operator() {
+    let operator = Operator::new(Memory::default()).unwrap();
+    let repository = DalRepository::from(operator);
     assert!(repository.is_empty().await.unwrap());
 }
 
