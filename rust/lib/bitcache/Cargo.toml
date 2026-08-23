@@ -32,12 +32,22 @@ unstable = []
 # Features:
 base58 = ["bitcache-core/base58"]
 
+# Backends:
+fs = ["dep:bitcache-fs"]
+heap = ["dep:bitcache-heap"]
+iroh = ["dep:bitcache-iroh"]
+opendal = ["dep:bitcache-opendal"]
+
 # Interoperability:
 interops = ["serde"]
 serde = ["bitcache-core/serde"]
 
 [dependencies]
 bitcache-core = { workspace = true }
+bitcache-fs = { workspace = true, optional = true }
+bitcache-heap = { workspace = true, optional = true }
+bitcache-iroh = { workspace = true, optional = true }
+bitcache-opendal = { workspace = true, optional = true }
 
 # CLI:
 clap = { workspace = true, optional = true }

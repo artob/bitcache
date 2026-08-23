@@ -412,6 +412,10 @@ name = "bitcache"
 version = "0.0.1"
 dependencies = [
  "bitcache-core",
+ "bitcache-fs",
+ "bitcache-heap",
+ "bitcache-iroh",
+ "bitcache-opendal",
  "clap",
  "clientele",
  "distrib",

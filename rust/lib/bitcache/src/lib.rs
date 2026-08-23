@@ -21,3 +21,15 @@ extern crate std;
 pub struct ReadmeDoctests;
 
 pub use bitcache_core::*;
+
+#[cfg(feature = "fs")]
+pub use bitcache_fs as fs;
+
+#[cfg(feature = "heap")]
+pub use bitcache_heap as heap;
+
+#[cfg(feature = "iroh")]
+pub use bitcache_iroh as iroh;
+
+#[cfg(feature = "opendal")]
+pub use bitcache_opendal as opendal;
