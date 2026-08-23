@@ -1,6 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
 //! Bitcache is a distributed content-addressable storage (CAS) system.
+//!
+//! This crate provides a filesystem-backed repository ([`FsRepository`]).
 
 #![no_std]
 #![allow(unused)]

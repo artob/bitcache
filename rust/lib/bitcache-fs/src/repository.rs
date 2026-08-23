@@ -7,10 +7,17 @@ use cap_std::{
 };
 use std::{io::Result, string::String, vec::Vec};
 
+/// A repository backed by a local filesystem directory.
+///
+/// Blobs are stored as flat files named by their hexadecimal IDs. Access is
+/// capability-scoped to the directory via [`cap_std`].
+///
+/// Note: I/O is currently performed synchronously within the async methods.
 #[derive(Debug)]
 pub struct FsRepository(Dir);
 
 impl FsRepository {
+    /// Opens the repository at the given directory path.
     pub fn open(path: impl AsRef<Utf8Path>) -> Result<Self> {
         Ok(Self(Dir::open_ambient_dir(
             path.as_ref(),

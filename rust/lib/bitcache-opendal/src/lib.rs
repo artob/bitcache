@@ -1,6 +1,11 @@
 // This is free and unencumbered software released into the public domain.
 
 //! Bitcache is a distributed content-addressable storage (CAS) system.
+//!
+//! This crate provides a repository backed by any [Apache OpenDAL] storage
+//! service ([`DalRepository`]).
+//!
+//! [Apache OpenDAL]: https://opendal.apache.org
 
 #![no_std]
 #![allow(unused)]

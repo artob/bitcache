@@ -4,10 +4,15 @@ use alloc::collections::BTreeMap;
 use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream};
 use core::{convert::Infallible, ops::Bound};
 
+/// An in-memory (heap-allocated) repository, useful for testing and caching.
+///
+/// Blobs are kept in a sorted map, so enumeration order and cursor seeks
+/// come for free.
 #[derive(Clone, Debug, Default)]
 pub struct HeapRepository(BTreeMap<Id, Bytes>);
 
 impl HeapRepository {
+    /// Creates a new, empty repository.
     pub fn new() -> Self {
         Self(BTreeMap::default())
     }

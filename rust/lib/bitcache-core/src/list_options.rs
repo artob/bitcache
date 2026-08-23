@@ -5,7 +5,7 @@ use arrayvec::ArrayString;
 
 /// Options for enumerating the blob IDs in a repository.
 ///
-/// See [`LocalRepository::list`](crate::LocalRepository::list).
+/// See [`Repository::list`](crate::Repository::list).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ListOptions {
     /// Enumerate only IDs whose hexadecimal encoding begins with this prefix.

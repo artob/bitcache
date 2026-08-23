@@ -3,7 +3,7 @@
 use crate::ID_LEN;
 use thiserror::Error;
 
-/// An error decoding an [`Id`] from a string representation.
+/// An error decoding an [`Id`](crate::Id) from a string representation.
 #[derive(Clone, Debug, Error)]
 pub enum IdError {
     /// The input wasn't a valid hexadecimal string.

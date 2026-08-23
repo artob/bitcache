@@ -4,6 +4,7 @@ use crate::IdError;
 use arrayvec::ArrayString;
 use blake3::Hash;
 
+/// The length of an [`Id`] in bytes.
 pub const ID_LEN: usize = 32;
 
 /// A cryptographic hash identifier.
@@ -53,19 +54,23 @@ impl Id {
         Self(blake3::hash(data.as_ref()))
     }
 
+    /// Constructs an ID from its raw bytes.
     pub fn from_bytes(input: [u8; ID_LEN]) -> Self {
         Self(Hash::from(input))
     }
 
+    /// Constructs an ID from a slice of exactly [`ID_LEN`] bytes.
     pub fn from_slice(input: &[u8]) -> Result<Self, core::array::TryFromSliceError> {
         Ok(Self::from_bytes(input.try_into()?))
     }
 
+    /// Decodes an ID from its hexadecimal representation.
     pub fn from_hex(input: impl AsRef<[u8]>) -> Result<Self, IdError> {
         Hash::from_hex(input).map(Self).map_err(IdError::DecodeHex)
     }
 
     #[cfg(feature = "base58")]
+    /// Decodes an ID from its Base58 representation.
     pub fn from_base58(input: impl AsRef<[u8]>) -> Result<Self, IdError> {
         use bs58::decode::Error::BufferTooSmall;
         let mut buffer = [0u8; ID_LEN];
@@ -77,19 +82,23 @@ impl Id {
         }
     }
 
+    /// The raw bytes of this ID.
     pub const fn as_bytes(&self) -> &[u8; ID_LEN] {
         self.0.as_bytes()
     }
 
+    /// The raw bytes of this ID, as a slice.
     pub const fn as_slice(&self) -> &[u8] {
         self.0.as_slice()
     }
 
+    /// Encodes this ID as a hexadecimal string.
     pub fn to_hex(&self) -> ArrayString<{ 2 * ID_LEN }> {
         self.0.to_hex()
     }
 
     #[cfg(feature = "base58")]
+    /// Encodes this ID as a Base58 string.
     pub fn to_base58(&self) -> ArrayString<{ 2 * ID_LEN }> {
         let mut bytes = [0u8; 2 * ID_LEN];
         let len = bs58::encode(self.0.as_bytes())

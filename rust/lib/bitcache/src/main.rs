@@ -37,6 +37,7 @@ enum Command {
     },
 }
 
+/// The entry point for the `bitcache` command-line interface.
 pub fn main() -> Result<(), SysexitsError> {
     // Load environment variables from `.env`:
     clientele::dotenv().ok();
