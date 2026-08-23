@@ -38,6 +38,13 @@ enum Command {
     /// Initialize a new repository in `./.bitcache/`.
     Init {},
 
+    /// Remove all blobs from the repository.
+    Clear {
+        /// Actually perform the operation; without this, nothing is removed.
+        #[arg(short, long)]
+        force: bool,
+    },
+
     /// Fetch blob(s) from the repository, writing their contents to stdout.
     #[clap(alias = "cat")]
     Get {
@@ -108,6 +115,16 @@ pub async fn main() -> Result<(), SysexitsError> {
 
         Command::Init {} => {
             let _repository = FsRepository::create(".bitcache")?;
+            Ok(())
+        },
+
+        Command::Clear { force } => {
+            if !force {
+                eprintln!("bitcache: refusing to clear the repository without --force");
+                return Err(SysexitsError::EX_USAGE);
+            }
+            let mut repository = FsRepository::open(".bitcache")?;
+            repository.clear().await?;
             Ok(())
         },
 
