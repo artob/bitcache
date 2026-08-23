@@ -1,9 +1,10 @@
 // This is free and unencumbered software released into the public domain.
 
 use alloc::string::String;
-use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository};
-use futures_core::Stream;
-use futures_util::{StreamExt, TryFutureExt, TryStreamExt, future};
+use bitcache_core::{
+    Blob, Bytes, Id, ListOptions, Repository, Stream,
+    futures_util::{StreamExt, TryFutureExt, TryStreamExt, future},
+};
 use opendal::{ErrorKind, Operator};
 
 /// A repository backed by an Apache OpenDAL [`Operator`].

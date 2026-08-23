@@ -1,8 +1,7 @@
 // This is free and unencumbered software released into the public domain.
 
-use bitcache_core::{Bytes, Id, ListOptions, Repository};
+use bitcache_core::{Bytes, Id, ListOptions, Repository, futures_util::TryStreamExt};
 use bitcache_opendal::DalRepository;
-use futures_util::TryStreamExt;
 use opendal::{Operator, services::Memory};
 use tokio::io::AsyncReadExt;
 

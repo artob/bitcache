@@ -19,8 +19,8 @@ publish.workspace = true
 [features]
 default = ["all", "std"]
 all = ["base58", "tokio"]
-alloc = ["serde?/alloc"]
-std = ["alloc", "blake3/std", "derive_more/std", "futures-io/std"]
+alloc = ["serde?/alloc", "futures-util/alloc"]
+std = ["alloc", "blake3/std", "derive_more/std", "futures-io/std", "futures-util/std"]
 unstable = []
 
 # Features:
@@ -39,6 +39,7 @@ bytes = { version = "1", default-features = false }
 derive_more = { version = "2", default-features = false, features = ["display", "from_str"] }
 futures-core = { version = "0.3", default-features = false }
 futures-io = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false }
 thiserror = { version = "2", default-features = false }
 tokio = { version = "1", default-features = false, optional = true }
 

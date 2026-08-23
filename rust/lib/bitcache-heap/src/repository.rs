@@ -1,10 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
 use alloc::collections::BTreeMap;
-use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository};
+use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream};
 use core::{convert::Infallible, ops::Bound};
-use futures_core::Stream;
-use futures_util::stream;
 
 #[derive(Clone, Debug, Default)]
 pub struct HeapRepository(BTreeMap<Id, Bytes>);

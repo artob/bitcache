@@ -249,6 +249,7 @@ dependencies = [
  "derive_more",
  "futures-core",
  "futures-io",
+ "futures-util",
  "serde",
  "thiserror 2.0.20",
  "tokio",
@@ -260,8 +261,6 @@ version = "0.0.0"
 dependencies = [
  "bitcache-core",
  "cap-std",
- "futures-core",
- "futures-util",
 ]
 
 [[package]]
@@ -270,8 +269,6 @@ version = "0.0.0"
 dependencies = [
  "bitcache-core",
  "futures",
- "futures-core",
- "futures-util",
 ]
 
 [[package]]
@@ -287,8 +284,6 @@ name = "bitcache-opendal"
 version = "0.0.0"
 dependencies = [
  "bitcache-core",
- "futures-core",
- "futures-util",
  "opendal",
  "tokio",
 ]

@@ -1,12 +1,10 @@
 // This is free and unencumbered software released into the public domain.
 
-use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository};
+use bitcache_core::{Blob, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream};
 use cap_std::{
     ambient_authority,
     fs_utf8::{Dir, camino::Utf8Path},
 };
-use futures_core::Stream;
-use futures_util::stream;
 use std::{io::Result, string::String, vec::Vec};
 
 #[derive(Debug)]
