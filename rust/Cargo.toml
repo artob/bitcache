@@ -27,6 +27,8 @@ bitcache-heap = { version = "=0.0.1", default-features = false }
 bitcache-iroh = { version = "=0.0.1", default-features = false }
 bitcache-opendal = { version = "=0.0.1", default-features = false }
 
+clap = { version = "4.5", default-features = false, features = ["std"] }
+
 [patch.crates-io]
 bitcache = { path = "lib/bitcache" }
 bitcache-core = { path = "lib/bitcache-core" }
