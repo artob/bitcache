@@ -1,6 +1,7 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache::IdEncoding;
+use bitcache_core::Id;
 use bitcache_fs::FsRepository;
 use clientele::{
     StandardOptions, SysexitsError,
@@ -32,6 +33,14 @@ enum Command {
         /// The paths to the file(s) to hash.
         #[arg(value_name = "FILES")]
         paths: Vec<PathBuf>,
+    },
+
+    /// Fetch blob(s) from the repository, writing their contents to stdout.
+    #[clap(alias = "cat")]
+    Get {
+        /// The IDs of the blob(s) to fetch.
+        #[arg(value_name = "IDS")]
+        ids: Vec<Id>,
     },
 
     /// Initialize a new repository in `./.bitcache/`.
@@ -86,6 +95,23 @@ pub async fn main() -> Result<(), SysexitsError> {
                     IdEncoding::Base58 => println!("{}", id.to_base58()),
                 }
             }
+            Ok(())
+        },
+
+        Command::Get { ids } => {
+            let repository = FsRepository::open(".bitcache")?;
+            let mut stdout = tokio::io::stdout();
+            for id in ids {
+                let Some(mut file) = repository.get_file(&id).await? else {
+                    eprintln!("bitcache: blob not found: {}", id.to_hex());
+                    return Err(SysexitsError::from(std::io::Error::from(
+                        std::io::ErrorKind::NotFound,
+                    )));
+                };
+                tokio::io::copy(&mut file, &mut stdout).await?;
+            }
+            use tokio::io::AsyncWriteExt;
+            stdout.flush().await?;
             Ok(())
         },
 

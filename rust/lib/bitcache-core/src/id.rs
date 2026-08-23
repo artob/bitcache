@@ -110,6 +110,19 @@ impl Id {
     }
 }
 
+/// Parses an ID from its hexadecimal representation, falling back to its
+/// Base58 representation (if the `base58` feature is enabled).
+impl core::str::FromStr for Id {
+    type Err = IdError;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        let result = Self::from_hex(input);
+        #[cfg(feature = "base58")]
+        let result = result.or_else(|_| Self::from_base58(input));
+        result
+    }
+}
+
 impl From<Hash> for Id {
     fn from(input: Hash) -> Self {
         Self(input)

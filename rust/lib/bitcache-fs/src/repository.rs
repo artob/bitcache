@@ -79,6 +79,23 @@ impl FsRepository {
         Ok(ids)
     }
 
+    /// Opens the blob with the given ID for asynchronous streaming reads.
+    ///
+    /// Returns `Ok(None)` if the repository doesn't contain the blob.
+    /// The returned file handle is capability-scoped to the repository
+    /// directory, and its contents can be read incrementally without
+    /// buffering the whole blob in memory.
+    #[cfg(feature = "tokio")]
+    pub async fn get_file(&self, id: &Id) -> Result<Option<bitcache_core::tokio::fs::File>> {
+        match self.0.open(Self::path(id)) {
+            Ok(file) => Ok(Some(bitcache_core::tokio::fs::File::from_std(
+                file.into_std(),
+            ))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     /// Stores the file at the given path as a blob, returning its ID.
     ///
     /// The file's contents are streamed with asynchronous I/O in a single

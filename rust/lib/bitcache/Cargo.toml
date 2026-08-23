@@ -40,7 +40,7 @@ opendal = ["dep:bitcache-opendal"]
 
 # Interoperability:
 serde = ["bitcache-core/serde"]
-tokio = ["std", "bitcache-core/tokio", "bitcache-fs?/tokio", "dep:tokio", "tokio/fs", "tokio/io-util", "tokio/macros", "tokio/rt-multi-thread"]
+tokio = ["std", "bitcache-core/tokio", "bitcache-fs?/tokio", "dep:tokio", "tokio/fs", "tokio/io-std", "tokio/io-util", "tokio/macros", "tokio/rt-multi-thread"]
 
 [dependencies]
 bitcache-core = { workspace = true }
