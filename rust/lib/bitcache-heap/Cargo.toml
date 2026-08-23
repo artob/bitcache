@@ -28,3 +28,8 @@ bitcache-core = { workspace = true }
 
 [dev-dependencies]
 futures = { version = "0.3", default-features = false, features = ["executor"] }
+
+# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
