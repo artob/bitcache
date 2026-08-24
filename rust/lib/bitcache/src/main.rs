@@ -174,7 +174,7 @@ pub async fn main() -> Result<(), SysexitsError> {
             }
             options.after = after;
             options.limit = limit;
-            let repository = bitcache::open("file:.bitcache")?;
+            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
             let mut ids = std::pin::pin!(repository.list(options));
             while let Some(id) = ids.next().await {
                 let id = id?;
@@ -211,7 +211,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Has { ids } => {
-            let repository = bitcache::open("file:.bitcache")?;
+            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
             for id in ids {
                 if !repository.contains(&id).await? {
                     eprintln!("bitcache: blob not found: {}", id.to_hex());
@@ -224,7 +224,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Get { ids } => {
-            let repository = bitcache::open("file:.bitcache")?;
+            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
             let mut stdout = tokio::io::stdout();
             for id in ids {
                 let Some(blob) = repository.get(&id).await? else {
@@ -241,7 +241,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Put { format, paths } => {
-            let mut repository = bitcache::open("file:.bitcache")?;
+            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
             for path in paths {
                 let buffer = tokio::fs::read(&path).await?;
                 let bytes = Bytes::from(buffer);
@@ -256,7 +256,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Rm { ids } => {
-            let mut repository = bitcache::open("file:.bitcache")?;
+            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
             for id in ids {
                 if !repository.remove(&id).await? {
                     eprintln!("bitcache: blob not found: {}", id.to_hex());
@@ -273,7 +273,7 @@ pub async fn main() -> Result<(), SysexitsError> {
                 eprintln!("bitcache: refusing to clear the repository without --force");
                 return Err(SysexitsError::EX_USAGE);
             }
-            let mut repository = bitcache::open("file:.bitcache")?;
+            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
             repository.clear().await?;
             Ok(())
         },

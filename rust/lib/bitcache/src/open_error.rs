@@ -9,6 +9,9 @@ pub enum OpenError {
     #[error("no adapter available for URL scheme")]
     NoAdapter,
 
+    #[error("invalid URL")]
+    InvalidUrl,
+
     #[error(transparent)]
     Repository(#[from] RepositoryError),
 
@@ -23,6 +26,7 @@ impl From<OpenError> for clientele::SysexitsError {
         use clientele::SysexitsError::*;
         match input {
             OpenError::NoAdapter => EX_UNAVAILABLE,
+            OpenError::InvalidUrl => EX_DATAERR,
             OpenError::Repository(error) => error.into(),
             #[cfg(feature = "alloc")]
             OpenError::Other(_) => EX_SOFTWARE,
