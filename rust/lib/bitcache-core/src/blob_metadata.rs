@@ -12,8 +12,8 @@ pub struct BlobMetadata {
     len: u64,
     media_type: Option<Cow<'static, str>>,
     created: Option<u64>,
-    expires: Option<u64>,
     accessed: Option<u64>,
+    expires: Option<u64>,
 }
 
 impl core::fmt::Display for BlobMetadata {
@@ -22,8 +22,8 @@ impl core::fmt::Display for BlobMetadata {
             .field(&self.len)
             .field(&self.media_type)
             .field(&self.created)
-            .field(&self.expires)
             .field(&self.accessed)
+            .field(&self.expires)
             .finish()
     }
 }
@@ -70,32 +70,6 @@ impl BlobMetadata {
         self.created.map(|t| t / 1e9 as u64)
     }
 
-    /// The expiration time of the blob, if known.
-    #[cfg(feature = "std")]
-    pub fn expires(&self) -> Option<std::time::SystemTime> {
-        use std::time::Duration;
-        self.expires
-            .and_then(|t| EPOCH.checked_add(Duration::from_nanos(t)))
-    }
-
-    /// The expiration time of the blob, as nanoseconds since the Unix epoch,
-    /// if known.
-    pub fn expires_nanos(&self) -> Option<u64> {
-        self.expires
-    }
-
-    /// The expiration time of the blob, as milliseconds since the Unix epoch,
-    /// if known.
-    pub fn expires_millis(&self) -> Option<u64> {
-        self.expires.map(|t| t / 1e6 as u64)
-    }
-
-    /// The expiration time of the blob, as seconds since the Unix epoch,
-    /// if known.
-    pub fn expires_secs(&self) -> Option<u64> {
-        self.expires.map(|t| t / 1e9 as u64)
-    }
-
     /// The last-accessed time of the blob, if known.
     #[cfg(feature = "std")]
     pub fn accessed(&self) -> Option<std::time::SystemTime> {
@@ -120,6 +94,32 @@ impl BlobMetadata {
     /// if known.
     pub fn accessed_secs(&self) -> Option<u64> {
         self.accessed.map(|t| t / 1e9 as u64)
+    }
+
+    /// The expiration time of the blob, if known.
+    #[cfg(feature = "std")]
+    pub fn expires(&self) -> Option<std::time::SystemTime> {
+        use std::time::Duration;
+        self.expires
+            .and_then(|t| EPOCH.checked_add(Duration::from_nanos(t)))
+    }
+
+    /// The expiration time of the blob, as nanoseconds since the Unix epoch,
+    /// if known.
+    pub fn expires_nanos(&self) -> Option<u64> {
+        self.expires
+    }
+
+    /// The expiration time of the blob, as milliseconds since the Unix epoch,
+    /// if known.
+    pub fn expires_millis(&self) -> Option<u64> {
+        self.expires.map(|t| t / 1e6 as u64)
+    }
+
+    /// The expiration time of the blob, as seconds since the Unix epoch,
+    /// if known.
+    pub fn expires_secs(&self) -> Option<u64> {
+        self.expires.map(|t| t / 1e9 as u64)
     }
 
     /// Sets the size of the blob, in bytes.
@@ -149,21 +149,6 @@ impl BlobMetadata {
         self
     }
 
-    /// Sets the expiration time.
-    #[cfg(feature = "std")]
-    pub fn with_expires(mut self, input: impl Into<Option<std::time::SystemTime>>) -> Self {
-        self.expires = input
-            .into()
-            .map(|t| t.duration_since(EPOCH).unwrap().as_nanos() as u64);
-        self
-    }
-
-    /// Sets the expiration time, as nanoseconds since the Unix epoch.
-    pub fn with_expires_nanos(mut self, input: impl Into<Option<u64>>) -> Self {
-        self.expires = input.into();
-        self
-    }
-
     /// Sets the last-accessed time.
     #[cfg(feature = "std")]
     pub fn with_accessed(mut self, input: impl Into<Option<std::time::SystemTime>>) -> Self {
@@ -176,6 +161,21 @@ impl BlobMetadata {
     /// Sets the last-accessed time, as nanoseconds since the Unix epoch.
     pub fn with_accessed_nanos(mut self, input: impl Into<Option<u64>>) -> Self {
         self.accessed = input.into();
+        self
+    }
+
+    /// Sets the expiration time.
+    #[cfg(feature = "std")]
+    pub fn with_expires(mut self, input: impl Into<Option<std::time::SystemTime>>) -> Self {
+        self.expires = input
+            .into()
+            .map(|t| t.duration_since(EPOCH).unwrap().as_nanos() as u64);
+        self
+    }
+
+    /// Sets the expiration time, as nanoseconds since the Unix epoch.
+    pub fn with_expires_nanos(mut self, input: impl Into<Option<u64>>) -> Self {
+        self.expires = input.into();
         self
     }
 }

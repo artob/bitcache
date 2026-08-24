@@ -124,21 +124,22 @@ pub async fn main() -> Result<(), SysexitsError> {
 
     // Parse command-line options:
     let options = Options::parse_from(args);
+    let flags = options.flags;
 
     // Print the program version, if requested:
-    if options.flags.version {
+    if flags.version {
         println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
 
     // Print the program license, if requested:
-    if options.flags.license {
+    if flags.license {
         print!("{}", include_str!("../../../UNLICENSE"));
         return Ok(());
     }
 
     // Configure debug output:
-    if options.flags.debug {}
+    if flags.debug {}
 
     match options.command.unwrap() {
         Command::Id { format, paths } => {
@@ -180,9 +181,32 @@ pub async fn main() -> Result<(), SysexitsError> {
             while let Some(id) = ids.next().await {
                 let id = id?;
                 match format {
-                    IdEncoding::Hex => println!("{}", id.to_hex()),
+                    IdEncoding::Hex => print!("{}", id.to_hex()),
                     #[cfg(feature = "base58")]
-                    IdEncoding::Base58 => println!("{}", id.to_base58()),
+                    IdEncoding::Base58 => print!("{}", id.to_base58()),
+                }
+                if flags.verbose == 0 {
+                    println!();
+                    continue;
+                }
+                let blob = repository.get(&id).await?.unwrap();
+                let metadata = blob.metadata();
+                let len = metadata.len();
+                let media_type = metadata.media_type().unwrap_or("application/octet-stream");
+                let created = metadata
+                    .created_secs()
+                    .map(|n| n.to_string())
+                    .unwrap_or_default();
+                let accessed = metadata
+                    .accessed_secs()
+                    .map(|n| n.to_string())
+                    .unwrap_or_default();
+                match flags.verbose {
+                    0 => unreachable!(),
+                    1 => println!("\t{}", len),
+                    2 => println!("\t{}\t{}", len, media_type),
+                    3 => println!("\t{}\t{}\t{}", len, media_type, created),
+                    4 | _ => println!("\t{}\t{}\t{}\t{}", len, media_type, created, accessed),
                 }
             }
             Ok(())
