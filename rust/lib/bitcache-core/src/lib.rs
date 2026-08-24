@@ -70,6 +70,9 @@ pub use list_options::*;
 mod repository;
 pub use repository::*;
 
+mod repository_error;
+pub use repository_error::*;
+
 /// Computes the [`Id`] of the given in-memory input by hashing it with BLAKE3.
 ///
 /// This is the most convenient option when the input already resides in

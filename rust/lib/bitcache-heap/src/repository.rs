@@ -2,7 +2,8 @@
 
 use alloc::collections::BTreeMap;
 use bitcache_core::{
-    Blob, BlobMetadata, BoxError, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream,
+    Blob, BlobMetadata, BoxError, Bytes, Id, ListOptions, Repository, RepositoryError, Stream,
+    futures_util::stream,
 };
 use core::{convert::Infallible, ops::Bound};
 
@@ -28,7 +29,7 @@ impl HeapRepository {
 
 impl Repository for HeapRepository {
     //type Error = Infallible;
-    type Error = BoxError;
+    type Error = RepositoryError;
 
     /// An O(1) shortcut, equivalent to counting the [`Repository::list`]
     /// enumeration.

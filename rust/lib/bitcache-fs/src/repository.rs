@@ -1,13 +1,14 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache_core::{
-    Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream,
+    Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, RepositoryError, Stream,
+    futures_util::stream,
 };
 use cap_std::{
     ambient_authority,
     fs_utf8::{Dir, camino::Utf8Path},
 };
-use std::{io::Result, string::String, vec::Vec};
+use std::{string::String, vec::Vec};
 
 /// The buffer size used when streaming file contents.
 #[cfg(feature = "tokio")]
@@ -25,7 +26,7 @@ pub struct FsRepository(Dir);
 
 impl FsRepository {
     /// Creates or opens a new repository at the given directory path.
-    pub fn create(path: impl AsRef<Utf8Path>) -> Result<Self> {
+    pub fn create(path: impl AsRef<Utf8Path>) -> Result<Self, RepositoryError> {
         use std::io::ErrorKind;
         match Dir::open_ambient_dir(path.as_ref(), ambient_authority()) {
             Ok(dir) => Ok(Self(dir)),
@@ -36,12 +37,12 @@ impl FsRepository {
                     ambient_authority(),
                 )?))
             },
-            Err(err) => Err(err),
+            Err(err) => Err(err.into()),
         }
     }
 
     /// Opens the repository at the given directory path.
-    pub fn open(path: impl AsRef<Utf8Path>) -> Result<Self> {
+    pub fn open(path: impl AsRef<Utf8Path>) -> Result<Self, RepositoryError> {
         Ok(Self(Dir::open_ambient_dir(
             path.as_ref(),
             ambient_authority(),
@@ -70,7 +71,7 @@ impl FsRepository {
     ///
     /// Directory iteration order is unspecified, so the IDs are materialized
     /// and sorted; this suffices for the current flat-directory layout.
-    fn collect_ids(&self, options: &ListOptions) -> Result<Vec<Id>> {
+    fn collect_ids(&self, options: &ListOptions) -> Result<Vec<Id>, RepositoryError> {
         let mut ids = Vec::new();
         for entry in self.0.entries()? {
             let entry = entry?;
@@ -101,13 +102,16 @@ impl FsRepository {
     /// directory, and its contents can be read incrementally without
     /// buffering the whole blob in memory.
     #[cfg(feature = "tokio")]
-    pub async fn get_file(&self, id: &Id) -> Result<Option<bitcache_core::tokio::fs::File>> {
+    pub async fn get_file(
+        &self,
+        id: &Id,
+    ) -> Result<Option<bitcache_core::tokio::fs::File>, RepositoryError> {
         match self.0.open(Self::path(id)) {
             Ok(file) => Ok(Some(bitcache_core::tokio::fs::File::from_std(
                 file.into_std(),
             ))),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -118,7 +122,10 @@ impl FsRepository {
     /// temporary file in the repository, which is then renamed into place
     /// once the ID is known. The file is never buffered wholly in memory.
     #[cfg(feature = "tokio")]
-    pub async fn put_file(&mut self, input_path: impl AsRef<std::path::Path>) -> Result<Id> {
+    pub async fn put_file(
+        &mut self,
+        input_path: impl AsRef<std::path::Path>,
+    ) -> Result<Id, RepositoryError> {
         use bitcache_core::{
             Hasher,
             tokio::{
@@ -132,7 +139,7 @@ impl FsRepository {
         let temp_name = std::format!(".put-{}.tmp", std::process::id());
         let mut temp_file = File::from_std(self.0.create(&temp_name)?.into_std());
 
-        let result: Result<Id> = async {
+        let result: Result<Id, RepositoryError> = async {
             let mut hasher = Hasher::new();
             let mut buffer = std::vec![0u8; BUFFER_LEN];
             loop {
@@ -157,12 +164,12 @@ impl FsRepository {
             },
             Err(error) => {
                 let _ = self.0.remove_file(&temp_name);
-                Err(error)
+                Err(error.into())
             },
         }
     }
 
-    pub async fn put(&mut self, data: Bytes) -> Result<Id> {
+    pub async fn put(&mut self, data: Bytes) -> Result<Id, RepositoryError> {
         let id = Id::of(&data);
         self.0.write(Self::path(&id), &data)?;
         Ok(id)
@@ -170,13 +177,13 @@ impl FsRepository {
 }
 
 impl Repository for FsRepository {
-    type Error = std::io::Error;
+    type Error = RepositoryError;
 
-    async fn contains(&self, id: &Id) -> Result<bool> {
-        self.0.try_exists(Self::path(id))
+    async fn contains(&self, id: &Id) -> Result<bool, Self::Error> {
+        Ok(self.0.try_exists(Self::path(id))?)
     }
 
-    async fn get(&self, id: &Id) -> Result<Option<Blob>> {
+    async fn get(&self, id: &Id) -> Result<Option<Blob>, Self::Error> {
         let path = Self::path(id);
         match self.0.read(&path) {
             Ok(data) => {
@@ -187,42 +194,42 @@ impl Repository for FsRepository {
                 Ok(Some(blob))
             },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
+            Err(error) => Err(error.into()),
         }
     }
 
-    async fn get_len(&self, id: &Id) -> Result<Option<u64>> {
+    async fn get_len(&self, id: &Id) -> Result<Option<u64>, Self::Error> {
         match self.0.metadata(Self::path(id)) {
             Ok(metadata) => Ok(Some(metadata.len())),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
+            Err(error) => Err(error.into()),
         }
     }
 
-    async fn put(&mut self, data: Bytes) -> Result<Id> {
+    async fn put(&mut self, data: Bytes) -> Result<Id, Self::Error> {
         self.put(data).await
     }
 
-    async fn remove(&mut self, id: &Id) -> Result<bool> {
+    async fn remove(&mut self, id: &Id) -> Result<bool, Self::Error> {
         match self.0.remove_file(Self::path(id)) {
             Ok(()) => Ok(true),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(error),
+            Err(error) => Err(error.into()),
         }
     }
 
-    async fn clear(&mut self) -> Result<()> {
+    async fn clear(&mut self) -> Result<(), Self::Error> {
         for id in self.collect_ids(&ListOptions::default())? {
             match self.0.remove_file(Self::path(&id)) {
                 Ok(()) => (),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                Err(error) => return Err(error),
+                Err(error) => return Err(error.into()),
             }
         }
         Ok(())
     }
 
-    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id>> {
+    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> {
         stream::iter(match self.collect_ids(&options) {
             Ok(ids) => ids.into_iter().map(Ok).collect(),
             Err(error) => std::vec![Err(error)],
