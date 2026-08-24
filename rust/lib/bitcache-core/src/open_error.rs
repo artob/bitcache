@@ -1,13 +1,19 @@
 // This is free and unencumbered software released into the public domain.
 
-use crate::ID_LEN;
+use super::RepositoryError;
 use thiserror::Error;
 
-/// An error decoding an [`Id`](crate::Id) from a string representation.
+/// An error when opening a repository.
 #[derive(Debug, Error)]
-pub enum RepositoryError {
-    #[error("unsupported operation")]
-    UnsupportedOperation,
+pub enum OpenError {
+    #[error("no adapter available for repository URL")]
+    UnknownAdapter,
+
+    #[error("invalid bytes in repository URL")]
+    InvalidUrl,
+
+    #[error(transparent)]
+    Repository(#[from] RepositoryError),
 
     #[cfg(feature = "std")]
     #[error(transparent)]
@@ -23,26 +29,26 @@ pub enum RepositoryError {
 }
 
 #[cfg(feature = "opendal")]
-impl From<opendal::Error> for RepositoryError {
+impl From<opendal::Error> for OpenError {
     fn from(input: opendal::Error) -> Self {
-        use RepositoryError::*;
+        use OpenError::*;
         use opendal::ErrorKind;
         match input.kind() {
-            ErrorKind::Unsupported => UnsupportedOperation,
+            ErrorKind::Unsupported => UnknownAdapter,
             _ => Opendal(input),
         }
     }
 }
 
 #[cfg(feature = "clientele")]
-impl From<RepositoryError> for clientele::SysexitsError {
-    fn from(input: RepositoryError) -> Self {
+impl From<OpenError> for clientele::SysexitsError {
+    fn from(input: OpenError) -> Self {
+        use OpenError::*;
         use clientele::SysexitsError::*;
         match input {
-            #[cfg(feature = "std")]
-            RepositoryError::Io(_) => EX_IOERR,
-            #[cfg(feature = "opendal")]
-            RepositoryError::Opendal(error) => EX_IOERR,
+            UnknownAdapter => EX_UNAVAILABLE,
+            InvalidUrl => EX_DATAERR,
+            Repository(error) => error.into(),
             _ => EX_SOFTWARE,
         }
     }

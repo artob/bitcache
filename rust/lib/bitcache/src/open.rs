@@ -41,5 +41,5 @@ pub fn open(
         ));
     }
 
-    Err(OpenError::NoAdapter)
+    Err(OpenError::UnknownAdapter)
 }

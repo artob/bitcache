@@ -28,9 +28,6 @@ mod open;
 #[cfg(feature = "alloc")]
 pub use open::*;
 
-mod open_error;
-pub use open_error::*;
-
 pub use bitcache_core::*;
 
 #[cfg(feature = "fs")]

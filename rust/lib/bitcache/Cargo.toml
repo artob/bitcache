@@ -56,6 +56,14 @@ fs = ["dep:bitcache-fs"]
 heap = ["dep:bitcache-heap"]
 iroh = ["dep:bitcache-iroh"]
 opendal = ["dep:bitcache-opendal"]
+opendal-all = [
+    "opendal-fs",
+    "opendal-http",
+    "opendal-redis",
+]
+opendal-fs = ["opendal", "bitcache-opendal?/fs"]
+opendal-http = ["opendal", "bitcache-opendal?/http"]
+opendal-redis = ["opendal", "bitcache-opendal?/redis"]
 
 # Interoperability:
 clientele = ["dep:clientele"]

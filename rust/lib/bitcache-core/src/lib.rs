@@ -67,6 +67,9 @@ pub use id_error::*;
 mod list_options;
 pub use list_options::*;
 
+mod open_error;
+pub use open_error::*;
+
 mod repository;
 pub use repository::*;
 

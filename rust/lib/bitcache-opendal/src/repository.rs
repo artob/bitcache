@@ -6,7 +6,7 @@ use alloc::{
     string::{String, ToString},
 };
 use bitcache_core::{
-    Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, RepositoryError, Stream,
+    Blob, BlobMetadata, Bytes, Id, ListOptions, OpenError, Repository, RepositoryError, Stream,
     futures_util::{StreamExt, TryFutureExt, TryStreamExt, future},
 };
 use opendal::{ErrorKind, Operator};
@@ -63,7 +63,7 @@ impl DalRepository {
     ///
     /// The full list of services and their configuration options is in the
     /// [OpenDAL service documentation](https://docs.rs/opendal/latest/opendal/services/index.html).
-    pub fn open(url: &str) -> Result<Self, RepositoryError> {
+    pub fn open(url: &str) -> Result<Self, OpenError> {
         Ok(Self::open_options(url, OpenOptions::new())?)
     }
 
@@ -71,7 +71,7 @@ impl DalRepository {
     ///
     /// See [`OpenOptions`] for the supported service configuration options
     /// and layers, and [`DalRepository::open`] for the URL format.
-    pub fn open_options(url: &str, options: OpenOptions) -> Result<Self, RepositoryError> {
+    pub fn open_options(url: &str, options: OpenOptions) -> Result<Self, OpenError> {
         // Ensure that all compiled-in services are registered for URL
         // scheme lookup (idempotent):
         opendal::init_default_registry();
