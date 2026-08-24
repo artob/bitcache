@@ -9,9 +9,10 @@ use opendal::{Operator, raw::Layer};
 /// # Examples
 ///
 /// ```no_run
+/// use bitcache_core::RepositoryError;
 /// use bitcache_opendal::{DalRepository, OpenOptions};
 ///
-/// # fn main() -> opendal::Result<()> {
+/// # fn main() -> Result<(), RepositoryError> {
 /// let repository = DalRepository::open_options(
 ///     "s3://bucket/prefix",
 ///     OpenOptions::new().with_option("region", "us-east-1"),
