@@ -29,8 +29,22 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = ["all", "std"]
 all = ["auto-register", "base58", "fs", "heap"]
-alloc = ["bitcache-core/alloc"]
-std = ["alloc", "bitcache-core/std", "ctor/std"]
+alloc = [
+    "bitcache-core/alloc",
+    "bitcache-fs?/alloc",
+    "bitcache-heap?/alloc",
+    "bitcache-iroh?/alloc",
+    "bitcache-opendal?/alloc",
+]
+std = [
+    "alloc",
+    "bitcache-core/std",
+    "bitcache-fs?/std",
+    "bitcache-heap?/std",
+    "bitcache-iroh?/std",
+    "bitcache-opendal?/std",
+    "ctor?/std",
+]
 unstable = []
 
 # Features:
