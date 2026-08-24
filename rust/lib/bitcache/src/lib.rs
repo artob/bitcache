@@ -7,7 +7,7 @@
 
 #![no_std]
 #![allow(unused)]
-#![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "auto-register"), forbid(unsafe_code))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "alloc")]

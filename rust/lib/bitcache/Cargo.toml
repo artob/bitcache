@@ -23,16 +23,17 @@ summary = "Bitcache is a distributed content-addressable storage (CAS) system."
 
 [features]
 default = ["all", "std"]
-all = ["base58"]
+all = ["auto-register", "base58", "heap"]
 alloc = ["bitcache-core/alloc"]
-cli = ["std", "tokio", "bitcache-core/clap", "dep:bitcache-fs", "dep:clientele", "dep:clap"]
-std = ["alloc", "bitcache-core/std"]
+std = ["alloc", "bitcache-core/std", "ctor/std"]
+cli = ["auto-register", "std", "tokio", "bitcache-core/clap", "dep:bitcache-fs", "dep:clientele", "dep:clap"]
 unstable = []
 
 # Features:
+auto-register = ["dep:ctor"]
 base58 = ["bitcache-core/base58"]
 
-# Backends:
+# Adapters:
 fs = ["dep:bitcache-fs"]
 heap = ["dep:bitcache-heap"]
 iroh = ["dep:bitcache-iroh"]
@@ -48,6 +49,7 @@ bitcache-fs = { workspace = true, optional = true }
 bitcache-heap = { workspace = true, optional = true }
 bitcache-iroh = { workspace = true, optional = true }
 bitcache-opendal = { workspace = true, optional = true }
+ctor = { version = "1.0", default-features = false, features = ["proc_macro"], optional = true }
 
 # CLI:
 clap = { workspace = true, optional = true }

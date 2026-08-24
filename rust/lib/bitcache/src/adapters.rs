@@ -3,7 +3,7 @@
 use bitcache_core::AdapterRegistry;
 
 pub fn register_default_adapters() {
-    let registry: AdapterRegistry = ();
+    let registry: AdapterRegistry = (); // TODO
 
     #[cfg(feature = "fs")]
     bitcache_fs::register_adapter(&registry);
@@ -16,4 +16,10 @@ pub fn register_default_adapters() {
 
     #[cfg(feature = "opendal")]
     bitcache_opendal::register_adapter(&registry);
+}
+
+#[cfg(feature = "auto-register")]
+#[ctor::ctor(unsafe)]
+fn init_auto_register() {
+    register_default_adapters();
 }
