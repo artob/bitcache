@@ -4,6 +4,7 @@ use crate::{Blob, Id, ListOptions};
 use bytes::Bytes;
 use core::future::Future;
 use futures_core::Stream;
+use futures_util::{StreamExt, stream};
 
 /// An asynchronous content-addressable blob repository.
 ///
@@ -14,15 +15,13 @@ use futures_core::Stream;
 /// than as `async fn`) so that returned futures are [`Send`] and repositories
 /// can be used with multithreaded executors (e.g. `tokio::spawn`).
 /// Implementations may nevertheless be written using plain `async fn`.
-pub trait Repository {
+#[dynosaur::dynosaur(pub DynRepository = dyn(box) Repository, bridge(dyn))]
+pub trait Repository: Send + Sync {
     /// The error type returned by repository operations.
-    type Error;
+    type Error: Send + Sync;
 
     /// Returns `true` if the repository contains no blobs.
-    fn is_empty(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send
-    where
-        Self: Sync,
-    {
+    fn is_empty(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send {
         async {
             let mut ids = core::pin::pin!(self.list(ListOptions::new().with_limit(1)));
             match next(&mut ids).await {
@@ -37,10 +36,7 @@ pub trait Repository {
     /// This is implemented in terms of [`Repository::list`], and hence takes
     /// time linear in the number of contained blobs. Implementations may
     /// override it when they can count blobs more cheaply.
-    fn len(&self) -> impl Future<Output = Result<u64, Self::Error>> + Send
-    where
-        Self: Sync,
-    {
+    fn len(&self) -> impl Future<Output = Result<u64, Self::Error>> + Send {
         async {
             let mut ids = core::pin::pin!(self.list(ListOptions::default()));
             let mut count: u64 = 0;
@@ -53,10 +49,7 @@ pub trait Repository {
     }
 
     /// Returns `true` if the repository contains the blob with the given ID.
-    fn contains(&self, id: &Id) -> impl Future<Output = Result<bool, Self::Error>> + Send
-    where
-        Self: Sync,
-    {
+    fn contains(&self, id: &Id) -> impl Future<Output = Result<bool, Self::Error>> + Send {
         async { Ok(self.get(id).await?.is_some()) }
     }
 
@@ -64,10 +57,7 @@ pub trait Repository {
     fn get(&self, id: &Id) -> impl Future<Output = Result<Option<Blob>, Self::Error>> + Send;
 
     /// Returns the size in bytes of the blob with the given ID, if present.
-    fn get_len(&self, id: &Id) -> impl Future<Output = Result<Option<u64>, Self::Error>> + Send
-    where
-        Self: Sync,
-    {
+    fn get_len(&self, id: &Id) -> impl Future<Output = Result<Option<u64>, Self::Error>> + Send {
         async { Ok(self.get(id).await?.map(|blob| blob.len())) }
     }
 
@@ -90,7 +80,12 @@ pub trait Repository {
     /// with a [`ListOptions::after`] cursor yield a stable paginated view
     /// even over very large repositories. See [`ListOptions`] for the
     /// supported prefix filter, cursor, and page-size limit.
-    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> + Send;
+    fn list(
+        &self,
+        options: ListOptions,
+    ) -> impl Stream<Item = Result<Id, Self::Error>> + Send + Unpin {
+        stream::empty().boxed()
+    }
 }
 
 /// Awaits the next item of a stream. (A dependency-free `StreamExt::next`.)

@@ -222,7 +222,7 @@ impl Repository for FsRepository {
         Ok(())
     }
 
-    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id>> + Send {
+    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id>> {
         stream::iter(match self.collect_ids(&options) {
             Ok(ids) => ids.into_iter().map(Ok).collect(),
             Err(error) => std::vec![Err(error)],

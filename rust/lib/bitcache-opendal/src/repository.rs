@@ -166,7 +166,7 @@ impl Repository for DalRepository {
         self.0.delete_options("", options).await
     }
 
-    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> + Send {
+    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> {
         // The cursor is passed down to the backend (e.g. S3 `start-after`) as
         // a pagination hint; `options.matches` below remains the source of
         // truth for backends that don't support it.
@@ -192,5 +192,6 @@ impl Repository for DalRepository {
                 future::ready(Ok(id))
             })
             .take(limit)
+            .boxed()
     }
 }

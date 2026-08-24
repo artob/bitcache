@@ -2,7 +2,7 @@
 
 use alloc::collections::BTreeMap;
 use bitcache_core::{
-    Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream,
+    Blob, BlobMetadata, BoxError, Bytes, Id, ListOptions, Repository, Stream, futures_util::stream,
 };
 use core::{convert::Infallible, ops::Bound};
 
@@ -27,7 +27,8 @@ impl HeapRepository {
 }
 
 impl Repository for HeapRepository {
-    type Error = Infallible;
+    //type Error = Infallible;
+    type Error = BoxError;
 
     /// An O(1) shortcut, equivalent to counting the [`Repository::list`]
     /// enumeration.
@@ -66,7 +67,7 @@ impl Repository for HeapRepository {
         Ok(())
     }
 
-    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> + Send {
+    fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> {
         let start = match options.after.clone() {
             Some(id) => (Bound::Excluded(id), Bound::Unbounded),
             None => (Bound::Unbounded, Bound::Unbounded),
