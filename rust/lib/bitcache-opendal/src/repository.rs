@@ -6,7 +6,7 @@ use alloc::{
     string::{String, ToString},
 };
 use bitcache_core::{
-    Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, Stream,
+    Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, RepositoryError, Stream,
     futures_util::{StreamExt, TryFutureExt, TryStreamExt, future},
 };
 use opendal::{ErrorKind, Operator};
@@ -63,15 +63,15 @@ impl DalRepository {
     ///
     /// The full list of services and their configuration options is in the
     /// [OpenDAL service documentation](https://docs.rs/opendal/latest/opendal/services/index.html).
-    pub fn open(url: &str) -> opendal::Result<Self> {
-        Self::open_options(url, OpenOptions::new())
+    pub fn open(url: &str) -> Result<Self, RepositoryError> {
+        Ok(Self::open_options(url, OpenOptions::new())?)
     }
 
     /// Opens a repository for the given OpenDAL service URL, with options.
     ///
     /// See [`OpenOptions`] for the supported service configuration options
     /// and layers, and [`DalRepository::open`] for the URL format.
-    pub fn open_options(url: &str, options: OpenOptions) -> opendal::Result<Self> {
+    pub fn open_options(url: &str, options: OpenOptions) -> Result<Self, RepositoryError> {
         // Ensure that all compiled-in services are registered for URL
         // scheme lookup (idempotent):
         opendal::init_default_registry();
@@ -111,10 +111,10 @@ impl DalRepository {
 }
 
 impl Repository for DalRepository {
-    type Error = opendal::Error;
+    type Error = RepositoryError;
 
     async fn contains(&self, id: &Id) -> Result<bool, Self::Error> {
-        self.0.exists(&Self::path(id)).await
+        Ok(self.0.exists(&Self::path(id)).await?)
     }
 
     async fn get(&self, id: &Id) -> Result<Option<Blob>, Self::Error> {
@@ -129,7 +129,7 @@ impl Repository for DalRepository {
                 Ok(Some(blob))
             },
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -137,7 +137,7 @@ impl Repository for DalRepository {
         match self.0.stat(&Self::path(id)).await {
             Ok(metadata) => Ok(Some(metadata.content_length())),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -163,7 +163,7 @@ impl Repository for DalRepository {
             recursive: true,
             ..Default::default()
         };
-        self.0.delete_options("", options).await
+        Ok(self.0.delete_options("", options).await?)
     }
 
     fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> {
@@ -191,6 +191,7 @@ impl Repository for DalRepository {
                 };
                 future::ready(Ok(id))
             })
+            .map_err(|error| error.into())
             .take(limit)
             .boxed()
     }

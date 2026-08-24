@@ -2,6 +2,7 @@
 
 use bitcache_core::AdapterRegistry;
 
+/// Registers the default adapters.
 pub fn register_default_adapters() {
     let registry: AdapterRegistry = (); // TODO
 

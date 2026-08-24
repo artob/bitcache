@@ -1,5 +1,6 @@
 // This is free and unencumbered software released into the public domain.
 
+#[cfg(feature = "alloc")]
 use alloc::borrow::Cow;
 
 #[cfg(feature = "std")]
@@ -10,6 +11,7 @@ pub const EPOCH: std::time::SystemTime = std::time::SystemTime::UNIX_EPOCH;
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct BlobMetadata {
     len: u64,
+    #[cfg(feature = "alloc")]
     media_type: Option<Cow<'static, str>>,
     created: Option<u64>,
     accessed: Option<u64>,
@@ -18,9 +20,11 @@ pub struct BlobMetadata {
 
 impl core::fmt::Display for BlobMetadata {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_tuple("")
-            .field(&self.len)
-            .field(&self.media_type)
+        let mut result = f.debug_tuple("");
+        result.field(&self.len);
+        #[cfg(feature = "alloc")]
+        result.field(&self.media_type);
+        result
             .field(&self.created)
             .field(&self.accessed)
             .field(&self.expires)
@@ -40,6 +44,7 @@ impl BlobMetadata {
     }
 
     /// The media type (aka MIME type) of the blob's contents, if known.
+    #[cfg(feature = "alloc")]
     pub fn media_type(&self) -> Option<&str> {
         self.media_type.as_deref()
     }
@@ -129,6 +134,7 @@ impl BlobMetadata {
     }
 
     /// Sets the media type (aka MIME type) of the blob's contents.
+    #[cfg(feature = "alloc")]
     pub fn with_media_type(mut self, input: Option<Cow<'static, str>>) -> Self {
         self.media_type = input;
         self

@@ -49,8 +49,8 @@ dynosaur = { version = "0.3", default-features = false }
 futures-core = { version = "0.3", default-features = false }
 futures-io = { version = "0.3", default-features = false }
 futures-util = { version = "0.3", default-features = false }
-thiserror = { version = "2", default-features = false }
-tokio = { version = "1", default-features = false, optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, optional = true }
 
 # Features:
 bs58 = { version = "0.5", default-features = false, optional = true }

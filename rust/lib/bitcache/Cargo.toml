@@ -28,10 +28,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["all", "std"]
-all = ["auto-register", "base58", "heap"]
+all = ["auto-register", "base58", "fs", "heap"]
 alloc = ["bitcache-core/alloc"]
 std = ["alloc", "bitcache-core/std", "ctor/std"]
-cli = ["auto-register", "std", "tokio", "bitcache-core/clap", "dep:bitcache-fs", "dep:clientele", "dep:clap"]
 unstable = []
 
 # Features:
@@ -45,8 +44,22 @@ iroh = ["dep:bitcache-iroh"]
 opendal = ["dep:bitcache-opendal"]
 
 # Interoperability:
+clientele = ["dep:clientele"]
 serde = ["bitcache-core/serde"]
 tokio = ["std", "bitcache-core/tokio", "bitcache-fs?/tokio", "dep:tokio", "tokio/fs", "tokio/io-std", "tokio/io-util", "tokio/macros", "tokio/rt-multi-thread"]
+
+# CLI:
+cli = [
+    "auto-register",
+    "clientele",
+    "clientele?/all",
+    "clientele?/std",
+    "std",
+    "tokio",
+    "bitcache-core/clap",
+    "dep:bitcache-fs",
+    "dep:clap",
+]
 
 [dependencies]
 bitcache-core = { workspace = true }
@@ -54,12 +67,15 @@ bitcache-fs = { workspace = true, optional = true }
 bitcache-heap = { workspace = true, optional = true }
 bitcache-iroh = { workspace = true, optional = true }
 bitcache-opendal = { workspace = true, optional = true }
+thiserror = { workspace = true }
+
+# Features:
 ctor = { version = "1.0", default-features = false, features = ["proc_macro"], optional = true }
 
 # CLI:
 clap = { workspace = true, optional = true }
-clientele = { workspace = true, optional = true, features = ["all", "std"] }
-tokio = { workspace = true, optional = true }
+clientele = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["fs"] }
 
 [dev-dependencies]
 distrib = { version = "0", default-features = false, features = ["alloc"] }

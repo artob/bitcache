@@ -33,6 +33,7 @@ clientele = { version = "0.3.8", default-features = false }
 iroh = { version = "1.0", default-features = false }
 opendal = { version = "0.58", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive"] }
+thiserror = { version = "2", default-features = false }
 tokio = { version = "1", default-features = false }
 
 [patch.crates-io]

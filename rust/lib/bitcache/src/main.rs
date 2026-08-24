@@ -1,8 +1,6 @@
 // This is free and unencumbered software released into the public domain.
 
-use bitcache::IdEncoding;
-use bitcache_core::{Id, ListOptions, Repository};
-use bitcache_fs::FsRepository;
+use bitcache::{Bytes, Id, IdEncoding, ListOptions, Repository};
 use clientele::{
     StandardOptions, SysexitsError,
     crates::clap::{Parser, Subcommand},
@@ -155,7 +153,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Init {} => {
-            let _repository = FsRepository::create(".bitcache")?;
+            let _repository = bitcache_fs::FsRepository::create(".bitcache")?;
             Ok(())
         },
 
@@ -176,7 +174,7 @@ pub async fn main() -> Result<(), SysexitsError> {
             }
             options.after = after;
             options.limit = limit;
-            let repository = FsRepository::open(".bitcache")?;
+            let repository = bitcache::open("file:.bitcache")?;
             let mut ids = std::pin::pin!(repository.list(options));
             while let Some(id) = ids.next().await {
                 let id = id?;
@@ -213,7 +211,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Has { ids } => {
-            let repository = FsRepository::open(".bitcache")?;
+            let repository = bitcache::open("file:.bitcache")?;
             for id in ids {
                 if !repository.contains(&id).await? {
                     eprintln!("bitcache: blob not found: {}", id.to_hex());
@@ -226,16 +224,16 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Get { ids } => {
-            let repository = FsRepository::open(".bitcache")?;
+            let repository = bitcache::open("file:.bitcache")?;
             let mut stdout = tokio::io::stdout();
             for id in ids {
-                let Some(mut file) = repository.get_file(&id).await? else {
+                let Some(blob) = repository.get(&id).await? else {
                     eprintln!("bitcache: blob not found: {}", id.to_hex());
                     return Err(SysexitsError::from(std::io::Error::from(
                         std::io::ErrorKind::NotFound,
                     )));
                 };
-                tokio::io::copy(&mut file, &mut stdout).await?;
+                tokio::io::copy(&mut blob.read(), &mut stdout).await?;
             }
             use tokio::io::AsyncWriteExt;
             stdout.flush().await?;
@@ -243,9 +241,11 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Put { format, paths } => {
-            let mut repository = FsRepository::open(".bitcache")?;
+            let mut repository = bitcache::open("file:.bitcache")?;
             for path in paths {
-                let id = repository.put_file(&path).await?;
+                let buffer = tokio::fs::read(&path).await?;
+                let bytes = Bytes::from(buffer);
+                let id = repository.put(bytes).await?;
                 match format {
                     IdEncoding::Hex => println!("{}", id.to_hex()),
                     #[cfg(feature = "base58")]
@@ -256,7 +256,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Rm { ids } => {
-            let mut repository = FsRepository::open(".bitcache")?;
+            let mut repository = bitcache::open("file:.bitcache")?;
             for id in ids {
                 if !repository.remove(&id).await? {
                     eprintln!("bitcache: blob not found: {}", id.to_hex());
@@ -273,7 +273,7 @@ pub async fn main() -> Result<(), SysexitsError> {
                 eprintln!("bitcache: refusing to clear the repository without --force");
                 return Err(SysexitsError::EX_USAGE);
             }
-            let mut repository = FsRepository::open(".bitcache")?;
+            let mut repository = bitcache::open("file:.bitcache")?;
             repository.clear().await?;
             Ok(())
         },
