@@ -27,7 +27,13 @@ bitcache-heap = { version = "=0.0.1", default-features = false }
 bitcache-iroh = { version = "=0.0.1", default-features = false }
 bitcache-opendal = { version = "=0.0.1", default-features = false }
 
+cap-std = { version = "4.0", default-features = false }
 clap = { version = "4.5", default-features = false, features = ["std"] }
+clientele = { version = "0.3.8", default-features = false }
+iroh = { version = "1.0", default-features = false }
+opendal = { version = "0.58", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive"] }
+tokio = { version = "1", default-features = false }
 
 [patch.crates-io]
 bitcache = { path = "lib/bitcache" }

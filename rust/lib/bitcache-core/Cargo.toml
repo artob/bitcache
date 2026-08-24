@@ -16,6 +16,11 @@ keywords.workspace = true
 categories.workspace = true
 publish.workspace = true
 
+# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = ["all", "std"]
 all = ["base58", "tokio"]
@@ -28,8 +33,11 @@ base58 = ["dep:bs58"]
 tokio = ["std", "dep:tokio", "tokio/fs", "tokio/io-util"]
 
 # Interoperability:
-interops = ["clap", "serde"]
+cap-std = ["dep:cap-std"]
 clap = ["dep:clap"]
+clientele = ["dep:clientele"]
+iroh = ["dep:iroh"]
+opendal = ["dep:opendal"]
 serde = ["dep:serde", "alloc", "blake3/serde"]
 
 [dependencies]
@@ -48,10 +56,9 @@ tokio = { version = "1", default-features = false, optional = true }
 bs58 = { version = "0.5", default-features = false, optional = true }
 
 # Interoperability:
+cap-std = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
-serde = { version = "1", default-features = false, features = ["derive"], optional = true }
-
-# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+clientele = { workspace = true, optional = true }
+iroh = { workspace = true, optional = true }
+opendal = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }

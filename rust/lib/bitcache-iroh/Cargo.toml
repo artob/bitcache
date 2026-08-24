@@ -16,6 +16,11 @@ keywords.workspace = true
 categories.workspace = true
 publish.workspace = true
 
+# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = ["all", "std"]
 all = []
@@ -24,10 +29,5 @@ std = ["alloc"]
 unstable = []
 
 [dependencies]
-bitcache-core = { workspace = true }
-iroh = { version = "1.0", default-features = false }
-
-# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+bitcache-core = { workspace = true, features = ["iroh"] }
+iroh = { workspace = true }

@@ -16,6 +16,11 @@ keywords.workspace = true
 categories.workspace = true
 publish.workspace = true
 
+# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = ["all", "std"]
 all = []
@@ -83,14 +88,10 @@ webhdfs = ["opendal/services-webhdfs", "http-transport"]
 http-transport = ["opendal/http-transport-reqwest"]
 
 [dependencies]
-bitcache-core = { workspace = true, features = ["tokio"] }
-opendal = { version = "0.58", default-features = false }
+bitcache-core = { workspace = true, features = ["opendal"] }
+opendal = { workspace = true }
 
 [dev-dependencies]
-opendal = { version = "0.58", default-features = false, features = ["services-memory"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-
-# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+bitcache-core = { workspace = true, features = ["tokio"] }
+opendal = { workspace = true, features = ["services-memory"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

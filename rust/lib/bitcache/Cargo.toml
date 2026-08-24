@@ -21,6 +21,11 @@ publish.workspace = true
 title = "Bitcache"
 summary = "Bitcache is a distributed content-addressable storage (CAS) system."
 
+# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = ["all", "std"]
 all = ["auto-register", "base58", "heap"]
@@ -53,16 +58,11 @@ ctor = { version = "1.0", default-features = false, features = ["proc_macro"], o
 
 # CLI:
 clap = { workspace = true, optional = true }
-clientele = { version = "0.3.8", features = [], optional = true }
-tokio = { version = "1", default-features = false, optional = true }
+clientele = { workspace = true, optional = true, features = ["all", "std"] }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 distrib = { version = "0", default-features = false, features = ["alloc"] }
-
-# Preview locally with: RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
 
 [[bin]]
 name = "bitcache"
