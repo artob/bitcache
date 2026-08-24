@@ -19,6 +19,9 @@ extern crate std;
 //#[cfg(doctest)]
 //pub struct ReadmeDoctests;
 
+mod adapter;
+pub use adapter::*;
+
 #[cfg(feature = "alloc")]
 mod repository;
 #[cfg(feature = "alloc")]

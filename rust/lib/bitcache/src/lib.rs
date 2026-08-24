@@ -20,6 +20,9 @@ extern crate std;
 #[cfg(doctest)]
 pub struct ReadmeDoctests;
 
+mod adapters;
+pub use adapters::*;
+
 pub use bitcache_core::*;
 
 #[cfg(feature = "fs")]

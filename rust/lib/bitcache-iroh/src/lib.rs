@@ -18,3 +18,6 @@ extern crate std;
 //#[doc = include_str!("../README.md")]
 //#[cfg(doctest)]
 //pub struct ReadmeDoctests;
+
+mod adapter;
+pub use adapter::*;

@@ -46,6 +46,9 @@ pub mod r#async;
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub mod sync;
 
+mod adapter_registry;
+pub use adapter_registry::*;
+
 mod blob;
 pub use blob::*;
 
