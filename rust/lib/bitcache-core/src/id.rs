@@ -49,6 +49,9 @@ impl core::fmt::Debug for Id {
 }
 
 impl Id {
+    /// A zero-valued ID, with all bytes set to zero.
+    pub const ZERO: Self = Self(Hash::from_bytes([0; ID_LEN]));
+
     /// Computes the ID of the given data.
     pub fn of(data: impl AsRef<[u8]>) -> Self {
         Self(blake3::hash(data.as_ref()))
