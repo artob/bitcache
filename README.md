@@ -120,6 +120,38 @@ bundle add bitcache
 $ bitcache --help
 ```
 
+### Adapters
+
+#### File System Adapter
+
+```dotenv
+BITCACHE_URL=file:.bitcache
+BITCACHE_URL=file:/tmp/bitcache
+```
+
+#### Heap (In-Memory) Adapter
+
+```dotenv
+BITCACHE_URL=heap:
+```
+
+#### OpenDAL Adapter
+
+| URL Scheme           | `ls`  | `get`  | `put`  | `rm`  | `clear` |
+| -------------------- | ----- | ------ | ------ | ----- | ------- |
+| `opendal+azblob`     | ✓    | ✓    | ✓    | ✓    | x |
+| `opendal+fs`         | ✓    | ✓    | ✓    | ✓    | ✓ |
+| `opendal+ftp`        | ✓    | ✓    | ✓    | ✓    | ✓ |
+| `opendal+memcached`  | x    | ✓    | ✓    | ✓    | x |
+| `opendal+memory`     | ✓    | ✓    | ✓    | ✓    | ✓ |
+| `opendal+mongodb`    | x    | ✓    | ✓    | ✓    | x |
+| `opendal+gcs`        | ✓    | ✓    | ✓    | ✓    | ✓ |
+| `opendal+http`       | x    | ✓    | x    | x    | x |
+| `opendal+redis`      | x    | ✓    | ✓    | ✓    | x |
+| `opendal+s3`         | ✓    | ✓    | ✓    | ✓    | ✓ |
+| `opendal+sftp`       | ✓    | ✓    | ✓    | ✓    | ? |
+| `opendal+sled`       | ✓    | ✓    | ✓    | ✓    | ✓ |
+
 ## 👨‍💻 Development
 
 ```bash

@@ -57,13 +57,37 @@ heap = ["dep:bitcache-heap"]
 iroh = ["dep:bitcache-iroh"]
 opendal = ["dep:bitcache-opendal"]
 opendal-all = [
+    "opendal-azblob",
     "opendal-fs",
+    "opendal-ftp",
+    "opendal-gcs",
     "opendal-http",
+    "opendal-memcached",
+    "opendal-memory",
+    "opendal-mongodb",
+    #"opendal-redb",
     "opendal-redis",
+    #"opendal-rocksdb",
+    "opendal-s3",
+    "opendal-sftp",
+    "opendal-sled",
+    #"opendal-sqlite",
 ]
+opendal-azblob = ["opendal", "bitcache-opendal?/azblob"]
 opendal-fs = ["opendal", "bitcache-opendal?/fs"]
+opendal-ftp = ["opendal", "bitcache-opendal?/ftp"]
+opendal-gcs = ["opendal", "bitcache-opendal?/gcs"]
 opendal-http = ["opendal", "bitcache-opendal?/http"]
+opendal-memcached = ["opendal", "bitcache-opendal?/memcached"]
+opendal-memory = ["opendal", "bitcache-opendal?/memory"]
+opendal-mongodb = ["opendal", "bitcache-opendal?/mongodb"]
+#opendal-redb = ["opendal", "bitcache-opendal?/redb"]
 opendal-redis = ["opendal", "bitcache-opendal?/redis"]
+#opendal-rocksdb = ["opendal", "bitcache-opendal?/rocksdb"]
+opendal-s3 = ["opendal", "bitcache-opendal?/s3"]
+opendal-sftp = ["opendal", "bitcache-opendal?/sftp"]
+opendal-sled = ["opendal", "bitcache-opendal?/sled"]
+#opendal-sqlite = ["opendal", "bitcache-opendal?/sqlite"]
 
 # Interoperability:
 clientele = ["dep:clientele"]
