@@ -1,0 +1,15 @@
+URL Scheme           | Adapter Crate    | `ls` | `get` | `put` | `rm` | `clear`
+`file:`              | bitcache-fs      |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`heap:`              | bitcache-heap    |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`opendal+azblob:`    | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    x
+`opendal+fs:`        | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`opendal+ftp:`       | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`opendal+memcached:` | bitcache-opendal |  x   |   ✓   |   ✓   |  ✓   |    x
+`opendal+memory:`    | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`opendal+mongodb:`   | bitcache-opendal |  x   |   ✓   |   ✓   |  ✓   |    x
+`opendal+gcs:`       | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`opendal+http:`      | bitcache-opendal |  x   |   ✓   |   x   |  x   |    x
+`opendal+redis:`     | bitcache-opendal |  x   |   ✓   |   ✓   |  ✓   |    x
+`opendal+s3:`        | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`opendal+sftp:`      | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ?
+`opendal+sled:`      | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
