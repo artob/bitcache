@@ -4,7 +4,7 @@
 version = "0.0.1"
 authors = ["Arto Bendiken"]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.91"
 description = "Bitcache is a distributed content-addressable storage (CAS) system."
 #documentation = "https://docs.rs/bitcache"
 readme = true

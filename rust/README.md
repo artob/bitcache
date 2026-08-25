@@ -1,7 +1,7 @@
 # Bitcache
 
 [![License](https://img.shields.io/badge/license-Public%20Domain-blue.svg)](https://unlicense.org)
-[![Compatibility](https://img.shields.io/badge/rust-1.88%2B-blue)](https://endoflife.date/rust)
+[![Compatibility](https://img.shields.io/badge/rust-1.91%2B-blue)](https://endoflife.date/rust)
 [![Package on Crates.io](https://img.shields.io/crates/v/bitcache)](https://crates.io/crates/bitcache)
 [![Documentation](https://img.shields.io/docsrs/bitcache?label=docs.rs)](https://docs.rs/bitcache)
 
@@ -32,7 +32,7 @@
 
 ## 🛠️ Prerequisites
 
-- [Rust] 1.88+
+- [Rust] 1.91+
 
 ## ⬇️ Installation
 
