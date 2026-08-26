@@ -6,7 +6,7 @@ use bitcache::{
 };
 use clientele::{
     StandardOptions, SysexitsError,
-    crates::clap::{Parser, Subcommand},
+    crates::clap::{self, CommandFactory, FromArgMatches, Parser, Subcommand},
 };
 use std::path::PathBuf;
 
@@ -25,6 +25,9 @@ struct Options {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Compute the BLAKE3 hash of the given file(s).
+    ///
+    /// Prints the ID each file would have as a blob, one per line, without
+    /// accessing or modifying any repository.
     #[clap(aliases = ["identify", "hash"])]
     Id {
         /// The format to use for the hash output.
@@ -37,9 +40,16 @@ enum Command {
     },
 
     /// Initialize a new repository in `./.bitcache/`.
+    ///
+    /// Creates an empty repository in the `./.bitcache/` directory of the
+    /// current working directory; `$BITCACHE_URL` is ignored.
     Init {},
 
     /// List the IDs of the blobs in the repository, in ascending order.
+    ///
+    /// With `--verbose` (repeatable), appends further tab-separated columns
+    /// to each line: the blob's byte size, media type, creation timestamp,
+    /// and last-access timestamp.
     #[clap(alias = "ls")]
     List {
         /// The format to use for the hash output.
@@ -84,6 +94,10 @@ enum Command {
     },
 
     /// Store the given file(s) into the repository as blob(s).
+    ///
+    /// Prints the ID of each stored blob, one per line. Since blobs are
+    /// content addressed, storing already-present content is harmless: the
+    /// blob is simply retained with the same ID.
     Put {
         /// The format to use for the hash output.
         #[arg(short, long, value_name = "FORMAT", default_value = "hex")]
@@ -106,6 +120,9 @@ enum Command {
     },
 
     /// Remove all blobs from the repository.
+    ///
+    /// As a safety measure, this requires the `--force` flag; without it,
+    /// nothing is removed and the command exits with a usage error.
     #[clap(aliases = ["reset"])]
     Clear {
         /// Actually perform the operation; without this, nothing is removed.
@@ -113,24 +130,119 @@ enum Command {
         force: bool,
     },
 
-    /// TBD
+    /// Copy blobs missing from the given remote repositories to them.
+    ///
+    /// Every blob present in the current repository but absent from a remote
+    /// repository is copied to that remote repository.
     Push {
-        /// TBD
+        /// The URLs of the remote repositories to push to.
+        #[arg(value_name = "URLS")]
         remotes: Vec<String>,
     },
 
-    /// TBD
+    /// Copy blobs missing from the current repository from the given remotes.
+    ///
+    /// Every blob present in a remote repository but absent from the current
+    /// repository is copied into the current repository.
     Pull {
-        /// TBD
+        /// The URLs of the remote repositories to pull from.
+        #[arg(value_name = "URLS")]
         remotes: Vec<String>,
     },
 
-    /// TBD
+    /// Synchronize with the given remote repositories, in both directions.
+    ///
+    /// Equivalent to a `pull` followed by a `push` for each given remote
+    /// repository: afterwards, the current repository and every given remote
+    /// repository all contain the union of their blobs.
     #[clap(aliases = ["rsync"])]
     Sync {
-        /// TBD
+        /// The URLs of the remote repositories to synchronize with.
+        #[arg(value_name = "URLS")]
         remotes: Vec<String>,
     },
+}
+
+/// How subcommands are grouped into sections in the `--help` output.
+/// Only the grouping is defined here; names and help texts are
+/// introspected from the [`Command`] definition itself.
+const COMMAND_SECTIONS: &[(&str, &[&str])] = &[
+    ("General commands:", &["id", "help"]),
+    (
+        "Current repository commands (`$BITCACHE_URL`, default `./.bitcache/`):",
+        &["init", "list", "has", "get", "put", "rm", "clear"],
+    ),
+    ("Remote repository commands:", &["push", "pull", "sync"]),
+];
+
+/// Renders the subcommand list grouped into [`COMMAND_SECTIONS`],
+/// using the names and help summaries from the given [`clap::Command`].
+fn subcommand_help_sections(command: &clap::Command) -> String {
+    let subcommands: Vec<&clap::Command> = command
+        .get_subcommands()
+        .filter(|subcommand| !subcommand.is_hide_set())
+        .collect();
+    let name_width = subcommands
+        .iter()
+        .map(|subcommand| subcommand.get_name().len())
+        .max()
+        .unwrap_or_default();
+    let render = |output: &mut String, subcommand: &clap::Command| {
+        let about = subcommand
+            .get_about()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        output.push_str(&format!(
+            "  {:name_width$}  {}\n",
+            subcommand.get_name(),
+            about
+        ));
+    };
+    let mut output = String::new();
+    for (heading, names) in COMMAND_SECTIONS {
+        output.push_str(heading);
+        output.push('\n');
+        for name in *names {
+            let subcommand = command
+                .find_subcommand(name)
+                .unwrap_or_else(|| panic!("unknown subcommand in COMMAND_SECTIONS: {}", name));
+            render(&mut output, subcommand);
+        }
+        output.push('\n');
+    }
+    // Catch-all for subcommands not (yet) assigned to a section above:
+    let orphans: Vec<&&clap::Command> = subcommands
+        .iter()
+        .filter(|subcommand| {
+            !COMMAND_SECTIONS
+                .iter()
+                .any(|(_, names)| names.contains(&subcommand.get_name()))
+        })
+        .collect();
+    if !orphans.is_empty() {
+        output.push_str("Other commands:\n");
+        for subcommand in orphans {
+            render(&mut output, subcommand);
+        }
+        output.push('\n');
+    }
+    output
+}
+
+/// Parses command-line options, using a help template that groups the
+/// subcommands into the sections defined by [`COMMAND_SECTIONS`].
+fn parse_options(args: impl IntoIterator<Item = std::ffi::OsString>) -> Options {
+    let mut command = Options::command();
+    command.build(); // adds the implicit `help` subcommand
+    let template = format!(
+        "{{before-help}}{{about-with-newline}}\n\
+         {{usage-heading}} {{usage}}\n\n\
+         {}\
+         Options:\n{{options}}{{after-help}}",
+        subcommand_help_sections(&command)
+    );
+    let matches = command.help_template(template).get_matches_from(args);
+    Options::from_arg_matches(&matches).unwrap_or_else(|error| error.exit())
 }
 
 /// The entry point for the `bitcache` command-line interface.
@@ -143,7 +255,7 @@ pub async fn main() -> Result<(), SysexitsError> {
     let args = clientele::args_os()?;
 
     // Parse command-line options:
-    let options = Options::parse_from(args);
+    let options = parse_options(args);
     let flags = options.flags;
 
     // Print the program version, if requested:
