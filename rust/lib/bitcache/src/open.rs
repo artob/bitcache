@@ -23,8 +23,15 @@ pub fn open(
     let url = url.as_ref();
 
     #[cfg(feature = "heap")]
-    if url.starts_with("memory:") {
+    if url.is_empty() || url.starts_with("heap:") || url.starts_with("memory:") {
         return Ok(DynRepository::new_box(bitcache_heap::HeapRepository::new()));
+    }
+
+    #[cfg(feature = "fs")]
+    if url.starts_with('.') || url.starts_with('/') || !url.contains(':') {
+        return Ok(DynRepository::new_box(bitcache_fs::FsRepository::open(
+            url,
+        )?));
     }
 
     #[cfg(feature = "fs")]
