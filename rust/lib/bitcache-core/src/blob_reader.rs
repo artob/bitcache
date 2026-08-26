@@ -4,7 +4,6 @@ use crate::{BlobMetadata, Id};
 use bytes::Bytes;
 
 /// An asynchronous reader over a blob's contents.
-#[cfg(feature = "std")]
 #[derive(Clone, Debug)]
 pub struct BlobReader(pub(crate) Bytes);
 
