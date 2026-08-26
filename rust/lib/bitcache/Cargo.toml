@@ -105,6 +105,7 @@ cli = [
     "bitcache-core/clap",
     "dep:bitcache-fs",
     "dep:clap",
+    "dep:color-print",
 ]
 
 [dependencies]
@@ -121,6 +122,7 @@ ctor = { version = "1.0", default-features = false, features = ["proc_macro"], o
 # CLI:
 clap = { workspace = true, optional = true }
 clientele = { workspace = true, optional = true }
+color-print = { version = "=0.3.7", optional = true }
 tokio = { workspace = true, optional = true, features = ["fs"] }
 
 [dev-dependencies]

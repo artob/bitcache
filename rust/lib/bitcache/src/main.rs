@@ -5,7 +5,7 @@ use bitcache::{
     futures_util::StreamExt,
 };
 use clientele::{
-    StandardOptions, SysexitsError,
+    ColorChoiceExt, StandardOptions, SysexitsError,
     crates::clap::{self, CommandFactory, FromArgMatches, Parser, Subcommand},
 };
 use std::path::PathBuf;
@@ -14,6 +14,7 @@ use std::path::PathBuf;
 #[derive(Debug, Parser)]
 #[command(name = "Bitcache", long_about)]
 #[command(arg_required_else_help = true)]
+#[command(styles = clientele::HELP_STYLES)]
 struct Options {
     #[clap(flatten)]
     flags: StandardOptions,
@@ -200,7 +201,8 @@ fn subcommand_help_sections(command: &clap::Command) -> String {
     };
     let mut output = String::new();
     for (heading, names) in COMMAND_SECTIONS {
-        output.push_str(heading);
+        let heading = color_print::cformat!("<y>{}</y>", heading);
+        output.push_str(&heading);
         output.push('\n');
         for name in *names {
             let subcommand = command
@@ -234,11 +236,12 @@ fn subcommand_help_sections(command: &clap::Command) -> String {
 fn parse_options(args: impl IntoIterator<Item = std::ffi::OsString>) -> Options {
     let mut command = Options::command();
     command.build(); // adds the implicit `help` subcommand
+    let options_heading = color_print::cstr!("<y>Options:</y>");
     let template = format!(
         "{{before-help}}{{about-with-newline}}\n\
          {{usage-heading}} {{usage}}\n\n\
          {}\
-         Options:\n{{options}}{{after-help}}",
+         {options_heading}:\n{{options}}{{after-help}}",
         subcommand_help_sections(&command)
     );
     let matches = command.help_template(template).get_matches_from(args);
@@ -253,6 +256,11 @@ pub async fn main() -> Result<(), SysexitsError> {
 
     // Expand wildcards and @argfiles:
     let args = clientele::args_os()?;
+
+    // Determine the color output mode ahead of parsing, so that Clap's own
+    // help/usage/error rendering honors `--color` (the default is "auto"):
+    let color = clientele::color_choice(&args);
+    let _use_color = color.to_bool();
 
     // Parse command-line options:
     let options = parse_options(args);
