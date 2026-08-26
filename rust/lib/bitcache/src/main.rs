@@ -1,6 +1,9 @@
 // This is free and unencumbered software released into the public domain.
 
-use bitcache::{Bytes, Id, IdEncoding, ListOptions, Repository};
+use bitcache::{
+    Bytes, DynRepository, Id, IdEncoding, ListOptions, Repository, RepositoryError,
+    futures_util::StreamExt,
+};
 use clientele::{
     StandardOptions, SysexitsError,
     crates::clap::{Parser, Subcommand},
@@ -109,6 +112,25 @@ enum Command {
         #[arg(short, long)]
         force: bool,
     },
+
+    /// TBD
+    Push {
+        /// TBD
+        remotes: Vec<String>,
+    },
+
+    /// TBD
+    Pull {
+        /// TBD
+        remotes: Vec<String>,
+    },
+
+    /// TBD
+    #[clap(aliases = ["rsync"])]
+    Sync {
+        /// TBD
+        remotes: Vec<String>,
+    },
 }
 
 /// The entry point for the `bitcache` command-line interface.
@@ -163,7 +185,6 @@ pub async fn main() -> Result<(), SysexitsError> {
             after,
             limit,
         } => {
-            use bitcache_core::futures_util::StreamExt;
             let mut options = ListOptions::new();
             if let Some(prefix) = prefix {
                 if prefix.len() > 64 || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -277,5 +298,52 @@ pub async fn main() -> Result<(), SysexitsError> {
             repository.clear().await?;
             Ok(())
         },
+
+        Command::Push { remotes } => {
+            let local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            for remote in remotes {
+                let mut remote_repository = bitcache::open(&remote)?;
+                sync(&local_repository, &mut remote_repository).await?;
+            }
+            Ok(())
+        },
+
+        Command::Pull { remotes } => {
+            let mut local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            for remote in remotes {
+                let remote_repository = bitcache::open(&remote)?;
+                sync(&remote_repository, &mut local_repository).await?;
+            }
+            Ok(())
+        },
+
+        Command::Sync { remotes } => {
+            let mut local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            for remote in remotes {
+                let mut remote_repository = bitcache::open(&remote)?;
+                sync(&remote_repository, &mut local_repository).await?;
+                sync(&local_repository, &mut remote_repository).await?;
+            }
+            Ok(())
+        },
     }
+}
+
+async fn sync(
+    source: &DynRepository<'_, RepositoryError>,
+    target: &mut DynRepository<'_, RepositoryError>,
+) -> Result<u64, RepositoryError> {
+    let mut count = 0;
+    let mut ids = std::pin::pin!(source.list(ListOptions::default()));
+    while let Some(id) = ids.next().await {
+        let id = id?;
+        if !target.contains(&id).await?
+            && let Some(blob) = source.get(&id).await?
+        {
+            let blob_data = blob.read();
+            target.put(blob_data.into_bytes()).await?;
+            count += 1;
+        }
+    }
+    Ok(count)
 }

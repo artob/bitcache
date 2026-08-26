@@ -52,6 +52,9 @@ pub use adapter_registry::*;
 mod blob;
 pub use blob::*;
 
+mod blob_reader;
+pub use blob_reader::*;
+
 mod blob_metadata;
 pub use blob_metadata::*;
 
