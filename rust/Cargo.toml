@@ -26,11 +26,13 @@ bitcache-fs = { version = "=0.0.1", default-features = false }
 bitcache-heap = { version = "=0.0.1", default-features = false }
 bitcache-iroh = { version = "=0.0.1", default-features = false }
 bitcache-opendal = { version = "=0.0.1", default-features = false }
+bitcache-valkey = { version = "=0.0.1", default-features = false }
 
 cap-std = { version = "4.0", default-features = false }
 clap = { version = "4.5", default-features = false, features = ["std"] }
 clientele = { version = "0.3.9", default-features = false }
 iroh = { version = "1.0", default-features = false }
+fred = { version = "10.1", default-features = false, features = ["transactions"] }
 opendal = { version = "0.58", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive"] }
 thiserror = { version = "2", default-features = false }
@@ -43,6 +45,7 @@ bitcache-fs = { path = "lib/bitcache-fs" }
 bitcache-heap = { path = "lib/bitcache-heap" }
 bitcache-iroh = { path = "lib/bitcache-iroh" }
 bitcache-opendal = { path = "lib/bitcache-opendal" }
+bitcache-valkey = { path = "lib/bitcache-valkey" }
 
 # The profile that 'dist' will build with
 [profile.dist]

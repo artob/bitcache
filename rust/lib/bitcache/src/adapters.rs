@@ -17,6 +17,9 @@ pub fn register_default_adapters() {
 
     #[cfg(feature = "opendal")]
     bitcache_opendal::register_adapter(&registry);
+
+    #[cfg(feature = "valkey")]
+    bitcache_valkey::register_adapter(&registry);
 }
 
 #[cfg(feature = "auto-register")]

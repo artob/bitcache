@@ -13,3 +13,4 @@ URL Scheme           | Adapter Crate    | `ls` | `get` | `put` | `rm` | `clear`
 `opendal+s3:`        | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
 `opendal+sftp:`      | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ?
 `opendal+sled:`      | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`valkey:`            | bitcache-valkey  |  ✓   |   ✓   |   ✓   |  ✓   |    ✓

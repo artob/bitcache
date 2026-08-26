@@ -35,6 +35,7 @@ alloc = [
     "bitcache-heap?/alloc",
     "bitcache-iroh?/alloc",
     "bitcache-opendal?/alloc",
+    "bitcache-valkey?/alloc",
 ]
 std = [
     "alloc",
@@ -43,6 +44,7 @@ std = [
     "bitcache-heap?/std",
     "bitcache-iroh?/std",
     "bitcache-opendal?/std",
+    "bitcache-valkey?/std",
     "ctor?/std",
 ]
 unstable = []
@@ -52,6 +54,7 @@ auto-register = ["dep:ctor"]
 base58 = ["bitcache-core/base58"]
 
 # Adapters:
+adapters = ["fs", "heap", "iroh", "opendal", "valkey"]
 fs = ["dep:bitcache-fs"]
 heap = ["dep:bitcache-heap"]
 iroh = ["dep:bitcache-iroh"]
@@ -88,11 +91,22 @@ opendal-s3 = ["opendal", "bitcache-opendal?/s3"]
 opendal-sftp = ["opendal", "bitcache-opendal?/sftp"]
 opendal-sled = ["opendal", "bitcache-opendal?/sled"]
 #opendal-sqlite = ["opendal", "bitcache-opendal?/sqlite"]
+valkey = ["dep:bitcache-valkey"]
 
 # Interoperability:
 clientele = ["dep:clientele"]
 serde = ["bitcache-core/serde"]
-tokio = ["std", "bitcache-core/tokio", "bitcache-fs?/tokio", "dep:tokio", "tokio/fs", "tokio/io-std", "tokio/io-util", "tokio/macros", "tokio/rt-multi-thread"]
+tokio = [
+    "std",
+    "bitcache-core/tokio",
+    "bitcache-fs?/tokio",
+    "dep:tokio",
+    "tokio/fs",
+    "tokio/io-std",
+    "tokio/io-util",
+    "tokio/macros",
+    "tokio/rt-multi-thread",
+]
 
 # CLI:
 cli = [
@@ -114,6 +128,7 @@ bitcache-fs = { workspace = true, optional = true }
 bitcache-heap = { workspace = true, optional = true }
 bitcache-iroh = { workspace = true, optional = true }
 bitcache-opendal = { workspace = true, optional = true }
+bitcache-valkey = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 # Features:

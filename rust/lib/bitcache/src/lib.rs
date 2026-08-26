@@ -41,3 +41,6 @@ pub use bitcache_iroh as iroh;
 
 #[cfg(feature = "opendal")]
 pub use bitcache_opendal as opendal;
+
+#[cfg(feature = "valkey")]
+pub use bitcache_valkey as valkey;
