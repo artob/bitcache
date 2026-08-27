@@ -28,6 +28,13 @@ Options:
   -d, --debug
           Enable debugging output
 
+      --ttl <DURATION>
+          Expire the stored blob(s) after the given duration.
+
+          Accepts a plain number of seconds (e.g. "90") or a human-friendly duration (e.g. "90s", "2m30s", "1h", "7d").
+
+          Requires a repository backend that supports blob expiration (e.g., Valkey); exits with an error otherwise.
+
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
 
