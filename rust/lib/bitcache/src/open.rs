@@ -37,6 +37,10 @@ pub fn open(
 
     let parsed = url::Url::parse(url).map_err(|_| OpenError::InvalidUrl)?;
     match parsed.scheme() {
+        // #[cfg(feature = "git")]
+        // "git" => Ok(DynRepository::new_box(bitcache_git::GitRepository::open( // TODO
+        //     url,
+        // )?)),
         #[cfg(feature = "heap")]
         "heap" | "memory" => Ok(DynRepository::new_box(bitcache_heap::HeapRepository::new())),
 
@@ -53,11 +57,15 @@ pub fn open(
             bitcache_opendal::DalRepository::open(url.strip_prefix("opendal+").unwrap())?,
         )),
 
-        #[cfg(feature = "valkey")]
+        #[cfg(any(feature = "valkey", feature = "redis"))]
         "valkey" | "valkeys" | "redis" | "rediss" => Ok(DynRepository::new_box(
             bitcache_valkey::ValkeyRepository::open(url)?,
         )),
 
+        // #[cfg(any(feature = "turso", feature = "sqlite"))]
+        // "sqlite" => Ok(DynRepository::new_box(bitcache_turso::TursoRepository::open( // TODO
+        //     url,
+        // )?)),
         _ => Err(OpenError::UnknownAdapter),
     }
 }

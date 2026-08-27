@@ -28,38 +28,49 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["all", "std"]
-all = ["auto-register", "base58", "fs", "heap", "valkey"]
 alloc = [
     "bitcache-core/alloc",
     "bitcache-fs?/alloc",
+    "bitcache-git?/alloc",
     "bitcache-heap?/alloc",
     "bitcache-iroh?/alloc",
     "bitcache-opendal?/alloc",
+    "bitcache-turso?/alloc",
     "bitcache-valkey?/alloc",
 ]
 std = [
     "alloc",
     "bitcache-core/std",
     "bitcache-fs?/std",
+    "bitcache-git?/std",
     "bitcache-heap?/std",
     "bitcache-iroh?/std",
     "bitcache-opendal?/std",
+    "bitcache-turso?/std",
     "bitcache-valkey?/std",
     "ctor?/std",
 ]
 unstable = []
 
 # Features:
+all = ["auto-register", "base58", "fs", "heap"]
 auto-register = ["dep:ctor"]
 base58 = ["bitcache-core/base58"]
 
-# Adapters:
-adapters = ["fs", "heap", "iroh", "opendal", "valkey"]
+# Adapters - native:
+all-adapters = ["fs", "git", "heap", "iroh", "opendal", "redis", "sqlite", "turso", "valkey"]
 fs = ["dep:bitcache-fs"]
+git = ["dep:bitcache-git"]
 heap = ["dep:bitcache-heap"]
 iroh = ["dep:bitcache-iroh"]
-opendal = ["dep:bitcache-opendal"]
-opendal-all = [
+redis = ["valkey"]
+sqlite = ["turso"]
+turso = ["dep:bitcache-turso"]
+valkey = ["dep:bitcache-valkey"]
+
+# Adapters - OpenDAL:
+all-opendal = [
+    "opendal",
     "opendal-azblob",
     "opendal-fs",
     "opendal-ftp",
@@ -76,6 +87,7 @@ opendal-all = [
     "opendal-sled",
     #"opendal-sqlite",
 ]
+opendal = ["dep:bitcache-opendal"]
 opendal-azblob = ["opendal", "bitcache-opendal?/azblob"]
 opendal-fs = ["opendal", "bitcache-opendal?/fs"]
 opendal-ftp = ["opendal", "bitcache-opendal?/ftp"]
@@ -91,7 +103,6 @@ opendal-s3 = ["opendal", "bitcache-opendal?/s3"]
 opendal-sftp = ["opendal", "bitcache-opendal?/sftp"]
 opendal-sled = ["opendal", "bitcache-opendal?/sled"]
 #opendal-sqlite = ["opendal", "bitcache-opendal?/sqlite"]
-valkey = ["dep:bitcache-valkey"]
 
 # Interoperability:
 clientele = ["dep:clientele"]
@@ -126,9 +137,11 @@ cli = [
 [dependencies]
 bitcache-core = { workspace = true }
 bitcache-fs = { workspace = true, optional = true }
+bitcache-git = { workspace = true, optional = true }
 bitcache-heap = { workspace = true, optional = true }
 bitcache-iroh = { workspace = true, optional = true }
 bitcache-opendal = { workspace = true, optional = true }
+bitcache-turso = { workspace = true, optional = true }
 bitcache-valkey = { workspace = true, optional = true }
 thiserror = { workspace = true }
 url = { workspace = true }

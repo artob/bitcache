@@ -42,5 +42,14 @@ pub use bitcache_iroh as iroh;
 #[cfg(feature = "opendal")]
 pub use bitcache_opendal as opendal;
 
+#[cfg(feature = "redis")]
+pub use bitcache_valkey as redis;
+
+#[cfg(feature = "sqlite")]
+pub use bitcache_turso as sqlite;
+
+#[cfg(feature = "turso")]
+pub use bitcache_turso as turso;
+
 #[cfg(feature = "valkey")]
 pub use bitcache_valkey as valkey;

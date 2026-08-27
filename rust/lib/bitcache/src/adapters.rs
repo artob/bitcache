@@ -9,6 +9,9 @@ pub fn register_default_adapters() {
     #[cfg(feature = "fs")]
     bitcache_fs::register_adapter(&registry);
 
+    #[cfg(feature = "git")]
+    bitcache_git::register_adapter(&registry);
+
     #[cfg(feature = "heap")]
     bitcache_heap::register_adapter(&registry);
 
@@ -17,6 +20,9 @@ pub fn register_default_adapters() {
 
     #[cfg(feature = "opendal")]
     bitcache_opendal::register_adapter(&registry);
+
+    #[cfg(feature = "turso")]
+    bitcache_turso::register_adapter(&registry);
 
     #[cfg(feature = "valkey")]
     bitcache_valkey::register_adapter(&registry);

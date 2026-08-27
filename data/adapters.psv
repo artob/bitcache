@@ -1,5 +1,6 @@
 URL Scheme           | Adapter Crate    | `ls` | `get` | `put` | `rm` | `clear`
 `file:`              | bitcache-fs      |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`git:`               | bitcache-git     |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
 `heap:`              | bitcache-heap    |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
 `opendal+azblob:`    | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    x
 `opendal+fs:`        | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
@@ -13,4 +14,6 @@ URL Scheme           | Adapter Crate    | `ls` | `get` | `put` | `rm` | `clear`
 `opendal+s3:`        | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
 `opendal+sftp:`      | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ?
 `opendal+sled:`      | bitcache-opendal |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`redis:`             | bitcache-valkey  |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
+`sqlite:`            | bitcache-turso   |  ✓   |   ✓   |   ✓   |  ✓   |    ✓
 `valkey:`            | bitcache-valkey  |  ✓   |   ✓   |   ✓   |  ✓   |    ✓

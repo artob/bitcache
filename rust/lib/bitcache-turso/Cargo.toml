@@ -1,7 +1,7 @@
 # See: https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [package]
-name = "bitcache-iroh"
+name = "bitcache-turso"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -29,5 +29,5 @@ std = ["alloc", "bitcache-core/std"]
 unstable = []
 
 [dependencies]
-bitcache-core = { workspace = true, features = ["iroh"] }
-iroh = { workspace = true }
+bitcache-core = { workspace = true, features = [] }
+turso = { workspace = true, features = [] }
