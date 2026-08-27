@@ -23,10 +23,11 @@ pub fn open(
     let url = url.as_ref();
 
     #[cfg(feature = "heap")]
-    if url.is_empty() || url.starts_with("heap:") || url.starts_with("memory:") {
+    if url.is_empty() {
         return Ok(DynRepository::new_box(bitcache_heap::HeapRepository::new()));
     }
 
+    // Bare filesystem paths (not URLs):
     #[cfg(feature = "fs")]
     if url.starts_with('.') || url.starts_with('/') || !url.contains(':') {
         return Ok(DynRepository::new_box(bitcache_fs::FsRepository::open(
@@ -34,26 +35,29 @@ pub fn open(
         )?));
     }
 
-    #[cfg(feature = "fs")]
-    if let Some(path) = url.strip_prefix("file:") {
-        return Ok(DynRepository::new_box(bitcache_fs::FsRepository::open(
-            path,
-        )?));
-    }
+    let parsed = url::Url::parse(url).map_err(|_| OpenError::InvalidUrl)?;
+    match parsed.scheme() {
+        #[cfg(feature = "heap")]
+        "heap" | "memory" => Ok(DynRepository::new_box(bitcache_heap::HeapRepository::new())),
 
-    #[cfg(feature = "opendal")]
-    if let Some(url) = url.strip_prefix("opendal+") {
-        return Ok(DynRepository::new_box(
-            bitcache_opendal::DalRepository::open(url)?,
-        ));
-    }
+        // Note: dispatch on the parsed scheme, but pass down the original
+        // path (rather than the parsed URL's, which WHATWG normalization
+        // would have made absolute), so that relative paths keep working:
+        #[cfg(feature = "fs")]
+        "file" => Ok(DynRepository::new_box(bitcache_fs::FsRepository::open(
+            url.strip_prefix("file:").unwrap(),
+        )?)),
 
-    #[cfg(feature = "valkey")]
-    if url.starts_with("valkey:") || url.starts_with("redis:") {
-        return Ok(DynRepository::new_box(
+        #[cfg(feature = "opendal")]
+        scheme if scheme.starts_with("opendal+") => Ok(DynRepository::new_box(
+            bitcache_opendal::DalRepository::open(url.strip_prefix("opendal+").unwrap())?,
+        )),
+
+        #[cfg(feature = "valkey")]
+        "valkey" | "valkeys" | "redis" | "rediss" => Ok(DynRepository::new_box(
             bitcache_valkey::ValkeyRepository::open(url)?,
-        ));
-    }
+        )),
 
-    Err(OpenError::UnknownAdapter)
+        _ => Err(OpenError::UnknownAdapter),
+    }
 }

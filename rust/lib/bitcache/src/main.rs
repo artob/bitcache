@@ -340,12 +340,20 @@ pub async fn main() -> Result<(), SysexitsError> {
                     .accessed_secs()
                     .map(|n| n.to_string())
                     .unwrap_or_default();
+                let expires = metadata
+                    .expires_secs()
+                    .map(|n| n.to_string())
+                    .unwrap_or_default();
                 match flags.verbose {
                     0 => unreachable!(),
                     1 => println!("\t{}", len),
                     2 => println!("\t{}\t{}", len, media_type),
                     3 => println!("\t{}\t{}\t{}", len, media_type, created),
-                    4 | _ => println!("\t{}\t{}\t{}\t{}", len, media_type, created, accessed),
+                    4 => println!("\t{}\t{}\t{}\t{}", len, media_type, created, accessed),
+                    5 | _ => println!(
+                        "\t{}\t{}\t{}\t{}\t{}",
+                        len, media_type, created, accessed, expires
+                    ),
                 }
             }
             Ok(())

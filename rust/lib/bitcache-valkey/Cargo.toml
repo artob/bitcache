@@ -32,3 +32,4 @@ unstable = []
 bitcache-core = { workspace = true, features = ["fred"] }
 fred = { workspace = true, features = ["i-keys", "i-sorted-sets"] }
 tokio = { workspace = true, features = ["sync"] }
+url = { workspace = true, features = ["std"] }

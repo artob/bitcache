@@ -130,6 +130,7 @@ bitcache-iroh = { workspace = true, optional = true }
 bitcache-opendal = { workspace = true, optional = true }
 bitcache-valkey = { workspace = true, optional = true }
 thiserror = { workspace = true }
+url = { workspace = true }
 
 # Features:
 ctor = { version = "1.0", default-features = false, features = ["proc_macro"], optional = true }

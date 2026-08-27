@@ -37,6 +37,7 @@ opendal = { version = "0.58", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive"] }
 thiserror = { version = "2", default-features = false }
 tokio = { version = "1", default-features = false }
+url = { version = "2.5", default-features = false }
 
 [patch.crates-io]
 bitcache = { path = "lib/bitcache" }

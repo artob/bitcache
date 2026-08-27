@@ -1,16 +1,20 @@
 // This is free and unencumbered software released into the public domain.
 
-use alloc::{format, string::String, sync::Arc, vec::Vec};
+use alloc::{format, string::String, string::ToString, sync::Arc, vec, vec::Vec};
 use bitcache_core::{
     Blob, BlobMetadata, Bytes, Id, ListOptions, OpenError, Repository, RepositoryError, Stream,
     futures_util::{StreamExt, TryStreamExt, future, stream},
 };
+use core::time::Duration;
 use fred::{
     clients::Client,
+    cmd,
     interfaces::{ClientLike, KeysInterface, SortedSetsInterface, TransactionInterface},
-    types::{Value, config::Config},
+    types::{Expiration, Value, config::Config},
 };
+use std::time::SystemTime;
 use tokio::sync::OnceCell;
+use url::Url;
 
 /// The sorted-set key indexing the IDs of all contained blobs.
 const INDEX_KEY: &str = "bitcache:index";
@@ -29,12 +33,27 @@ const PAGE_SIZE: usize = 256;
 /// blobs. Since the index is sorted lexicographically, enumeration order and
 /// cursor seeks come for free.
 ///
+/// # Expiring blobs
+///
+/// Blobs may carry an expiration time, enforced server-side by the key's
+/// TTL. A default time-to-live for stored blobs can be configured via
+/// [`ValkeyRepository::with_ttl`] or a `ttl` URL query parameter (in
+/// seconds), and the expiration of an individual blob can be set or cleared
+/// with [`ValkeyRepository::expire`]. A fetched blob's expiration time, if
+/// any, is reported by its [`BlobMetadata::expires`](BlobMetadata).
+///
+/// Expired blobs disappear from [`Repository::contains`],
+/// [`Repository::get`], and [`Repository::list`] immediately, though their
+/// index entries are only pruned lazily (during enumeration), so
+/// [`Repository::len`] may transiently overcount until then.
+///
 /// The connection is established lazily on first use; cloning the repository
 /// shares the underlying connection.
 #[derive(Clone)]
 pub struct ValkeyRepository {
     client: Client,
     connected: Arc<OnceCell<()>>,
+    ttl: Option<Duration>,
 }
 
 impl From<Client> for ValkeyRepository {
@@ -51,12 +70,51 @@ impl ValkeyRepository {
     /// - `valkey://localhost:6379`
     /// - `valkey://localhost:6379/0`
     /// - `valkey://username:password@localhost:6379`
+    /// - `valkey://localhost:6379?ttl=3600`
     /// - `redis://localhost:6379`
+    ///
+    /// A `ttl` query parameter, in seconds, configures a default
+    /// time-to-live for stored blobs; see [`ValkeyRepository::with_ttl`].
     ///
     /// The connection itself is established lazily upon first use.
     pub fn open(url: &str) -> Result<Self, OpenError> {
-        let config = Config::from_url(&Self::normalize_url(url))?;
-        Ok(Self::new(Client::new(config, None, None, None)))
+        // Accept scheme-less `//host:port` forms:
+        let url = if url.starts_with("//") {
+            format!("redis:{}", url)
+        } else {
+            url.into()
+        };
+        let mut url = Url::parse(&url).map_err(|_| OpenError::InvalidUrl)?;
+
+        // Normalize the `valkey(s)` schemes to the `redis(s)` schemes
+        // understood by the fred client:
+        match url.scheme() {
+            "valkey" => url.set_scheme("redis").map_err(|_| OpenError::InvalidUrl)?,
+            "valkeys" => url
+                .set_scheme("rediss")
+                .map_err(|_| OpenError::InvalidUrl)?,
+            _ => {},
+        }
+
+        // Extract (and strip) the `ttl` query parameter, in seconds:
+        let mut ttl = None;
+        if url.query().is_some() {
+            let pairs: Vec<(String, String)> = url.query_pairs().into_owned().collect();
+            url.set_query(None);
+            for (key, value) in pairs {
+                if key == "ttl" {
+                    ttl = match value.parse::<u64>() {
+                        Ok(secs) if secs > 0 => Some(Duration::from_secs(secs)),
+                        _ => return Err(OpenError::InvalidUrl),
+                    };
+                } else {
+                    url.query_pairs_mut().append_pair(&key, &value);
+                }
+            }
+        }
+
+        let config = Config::from_url(url.as_str())?;
+        Ok(Self::new(Client::new(config, None, None, None)).with_ttl(ttl))
     }
 
     /// Creates a new repository backed by the given client.
@@ -64,7 +122,24 @@ impl ValkeyRepository {
         Self {
             client,
             connected: Arc::new(OnceCell::new()),
+            ttl: None,
         }
+    }
+
+    /// Configures a default time-to-live for stored blobs.
+    ///
+    /// When set, every blob stored by [`Repository::put`] expires that long
+    /// after it was (last) stored; storing an already-present blob resets
+    /// its clock. When unset (the default), stored blobs are persistent,
+    /// and storing an already-present blob clears any expiration it had.
+    pub fn with_ttl(mut self, ttl: impl Into<Option<Duration>>) -> Self {
+        self.ttl = ttl.into();
+        self
+    }
+
+    /// The default time-to-live for stored blobs, if configured.
+    pub fn ttl(&self) -> Option<Duration> {
+        self.ttl
     }
 
     /// The underlying fred client.
@@ -72,16 +147,32 @@ impl ValkeyRepository {
         &self.client
     }
 
-    /// Normalizes `valkey:` URLs (and scheme-less `//host:port` forms) to
-    /// the `redis:` scheme understood by the fred client.
-    fn normalize_url(url: &str) -> String {
-        if let Some(rest) = url.strip_prefix("valkey") {
-            format!("redis{}", rest)
-        } else if url.starts_with("redis") {
-            url.into()
-        } else {
-            format!("redis:{}", url)
-        }
+    /// Sets or clears the expiration time of the blob with the given ID.
+    ///
+    /// Returns `true` if the expiration was updated, or `false` if no blob
+    /// with the given ID was present. Passing `None` makes the blob
+    /// persistent (in which case `false` is also returned if the blob had
+    /// no expiration to clear).
+    pub async fn expire(
+        &mut self,
+        id: &Id,
+        expires: Option<SystemTime>,
+    ) -> Result<bool, RepositoryError> {
+        let client = self.connect().await?;
+        let key = Self::blob_key(id);
+        let result: i64 = match expires {
+            Some(expires) => {
+                let millis = expires
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+                client
+                    .custom(cmd!("PEXPIREAT"), vec![key, millis.to_string()])
+                    .await?
+            },
+            None => client.persist(key).await?,
+        };
+        Ok(result > 0)
     }
 
     /// The storage key for the blob with the given ID.
@@ -119,9 +210,17 @@ impl Repository for ValkeyRepository {
 
     async fn get(&self, id: &Id) -> Result<Option<Blob>, Self::Error> {
         let client = self.connect().await?;
-        let data: Option<Bytes> = client.get(Self::blob_key(id)).await?;
+        let key = Self::blob_key(id);
+        let pipeline = client.pipeline();
+        let _: () = pipeline.get(&key).await?;
+        let _: () = pipeline
+            .custom(cmd!("PEXPIRETIME"), vec![key.clone()])
+            .await?;
+        let (data, expires_millis): (Option<Bytes>, i64) = pipeline.all().await?;
         Ok(data.map(|data| {
-            let metadata = BlobMetadata::new(data.len() as u64);
+            let metadata = BlobMetadata::new(data.len() as u64).with_expires_nanos(
+                (expires_millis > 0).then(|| expires_millis as u64 * 1_000_000),
+            );
             Blob::new_unchecked(id.clone(), data).with_metadata(metadata)
         }))
     }
@@ -140,10 +239,13 @@ impl Repository for ValkeyRepository {
 
     async fn put(&mut self, data: Bytes) -> Result<Id, Self::Error> {
         let id = Id::of(&data);
+        let expiration = self
+            .ttl
+            .map(|ttl| Expiration::PX(ttl.as_millis().max(1) as i64));
         let client = self.connect().await?;
         let trx = client.multi();
         let _: () = trx
-            .set(Self::blob_key(&id), data, None, None, false)
+            .set(Self::blob_key(&id), data, expiration, None, false)
             .await?;
         let _: () = trx
             .zadd(
@@ -219,6 +321,28 @@ impl Repository for ValkeyRepository {
                 let cursor = page
                     .last()
                     .map_or_else(|| String::from("+"), |hex| format!("({}", hex));
+                // Filter out expired blobs whose index entries linger, and
+                // opportunistically prune those stale entries:
+                let page = if page.is_empty() {
+                    page
+                } else {
+                    let pipeline = client.pipeline();
+                    for hex in &page {
+                        let _: () = pipeline
+                            .exists(format!("{}{}", BLOB_KEY_PREFIX, hex))
+                            .await?;
+                    }
+                    let exists: Vec<u64> = pipeline.all().await?;
+                    let mut live = Vec::new();
+                    let mut stale = Vec::new();
+                    for (hex, count) in page.into_iter().zip(exists) {
+                        if count > 0 { &mut live } else { &mut stale }.push(hex);
+                    }
+                    if !stale.is_empty() {
+                        let _: u64 = client.zrem(INDEX_KEY, stale).await?;
+                    }
+                    live
+                };
                 Result::<_, RepositoryError>::Ok(Some((page, (repository, cursor, done))))
             },
         )

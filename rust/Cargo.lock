@@ -415,6 +415,7 @@ dependencies = [
  "distrib",
  "thiserror 2.0.20",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -481,6 +482,7 @@ dependencies = [
  "bitcache-core",
  "fred",
  "tokio",
+ "url",
 ]
 
 [[package]]
