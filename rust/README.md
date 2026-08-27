@@ -59,11 +59,11 @@ cargo install bitcache --locked --features=cli
 #### Downloading Release Tarballs
 
 ```bash
-wget https://github.com/artob/bitcache/releases/download/0.0.2/bitcache-aarch64-apple-darwin.tar.xz
-wget https://github.com/artob/bitcache/releases/download/0.0.2/bitcache-aarch64-unknown-linux-gnu.tar.xz
-wget https://github.com/artob/bitcache/releases/download/0.0.2/bitcache-x86_64-apple-darwin.tar.xz
-wget https://github.com/artob/bitcache/releases/download/0.0.2/bitcache-x86_64-pc-windows-msvc.zip
-wget https://github.com/artob/bitcache/releases/download/0.0.2/bitcache-x86_64-unknown-linux-gnu.tar.xz
+wget https://github.com/artob/bitcache/releases/download/0.0.3/bitcache-aarch64-apple-darwin.tar.xz
+wget https://github.com/artob/bitcache/releases/download/0.0.3/bitcache-aarch64-unknown-linux-gnu.tar.xz
+wget https://github.com/artob/bitcache/releases/download/0.0.3/bitcache-x86_64-apple-darwin.tar.xz
+wget https://github.com/artob/bitcache/releases/download/0.0.3/bitcache-x86_64-pc-windows-msvc.zip
+wget https://github.com/artob/bitcache/releases/download/0.0.3/bitcache-x86_64-unknown-linux-gnu.tar.xz
 ```
 
 ### Installation of the Library
