@@ -165,6 +165,18 @@ Options::
           Print help (see a summary with '-h')
 ```
 
+- [`bitcache clear`](#bitcache-clear) - Remove all blobs from the repository
+- [`bitcache get`](#bitcache-get) - Fetch blob(s) from the repository, writing their contents to stdout
+- [`bitcache has`](#bitcache-has) - Check whether the repository contains blob(s) with the given ID(s)
+- [`bitcache id`](#bitcache-id) - Compute the BLAKE3 hash of the given file(s)
+- [`bitcache init`](#bitcache-init) - Initialize a new repository in `./.bitcache/`
+- [`bitcache list`](#bitcache-list) - List the IDs of the blobs in the repository, in ascending order
+- [`bitcache pull`](#bitcache-pull) - Copy blobs missing from the current repository from the given remotes
+- [`bitcache push`](#bitcache-push) - Copy blobs missing from the given remote repositories to them
+- [`bitcache put`](#bitcache-put) - Store the given file(s) into the repository as blob(s)
+- [`bitcache rm`](#bitcache-rm) - Remove blob(s) with the given ID(s) from the repository
+- [`bitcache sync`](#bitcache-sync) - Synchronize with the given remote repositories, in both directions
+
 #### `bitcache clear`
 
 ```shellsession
@@ -465,6 +477,13 @@ Options:
 
   -d, --debug
           Enable debugging output
+
+      --ttl <DURATION>
+          Expire the stored blob(s) after the given duration.
+
+          Accepts a plain number of seconds (e.g. "90") or a human-friendly duration (e.g. "90s", "2m30s", "1h", "7d").
+
+          Requires a repository backend that supports blob expiration (e.g., Valkey); exits with an error otherwise.
 
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
