@@ -25,7 +25,7 @@
 ## ✨ Features
 
 - Available both as the command-line tool [`bitcache`] and a polyglot library.
-- Polyglot software <sup><sub>(soon!)</sub></sup> available for Dart, Python, Ruby, Rust, and TypeScript.
+- Polyglot software also <sup><sub>(soon!)</sub></sup> for Dart, Python, Ruby, Rust, and TypeScript.
 - Cuts red tape: 100% free and unencumbered public domain software.
 
 ## ⬇️ Installation
@@ -37,6 +37,8 @@
 ```bash
 cargo binstall -y bitcache
 ```
+
+<img width="100%" alt="Installation via cargo-binstall" src="https://github.com/artob/bitcache/raw/master/rust/etc/asciinema/install.gif"/>
 
 #### Installation via [mise]
 

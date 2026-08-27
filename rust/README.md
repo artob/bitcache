@@ -27,7 +27,7 @@
 - Designed for `#![no_std]` environment compatibility from the get-go.
 - Supports opting out of any feature using comprehensive [feature flags].
 - Adheres to the Rust API Guidelines in its [naming conventions].
-- Polyglot software also <sup><sub>(soon!)</sub></sup> available for Dart, Python, Ruby, and TypeScript.
+- Polyglot software <sup><sub>(soon!)</sub></sup> available for Dart, Python, Ruby, and TypeScript.
 - Cuts red tape: 100% free and unencumbered public domain software.
 
 ## 🛠️ Prerequisites
@@ -43,6 +43,8 @@
 ```bash
 cargo binstall -y bitcache
 ```
+
+<img width="100%" alt="Installation via cargo-binstall" src="{{ github.repository.link }}/raw/master/rust/etc/asciinema/install.gif"/>
 
 #### Installation via [mise]
 
