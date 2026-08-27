@@ -2,8 +2,8 @@
 
 //! Bitcache is a distributed content-addressable storage (CAS) system.
 //!
-//! This crate will provide a repository backed by [Turso](https://turso.tech),
-//! a SQLite-compatible serverless database implementation in Rust.
+//! This crate provides a repository backed by [Turso](https://turso.tech),
+//! a SQLite-compatible database implementation in Rust.
 
 #![no_std]
 #![allow(unused)]
@@ -22,3 +22,8 @@ extern crate std;
 
 mod adapter;
 pub use adapter::*;
+
+#[cfg(feature = "std")]
+mod repository;
+#[cfg(feature = "std")]
+pub use repository::*;

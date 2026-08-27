@@ -342,7 +342,7 @@ pub async fn main() -> Result<(), SysexitsError> {
             }
             list_options.after = after;
             list_options.limit = limit;
-            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             let mut ids = std::pin::pin!(repository.list(list_options));
             while let Some(id) = ids.next().await {
                 let id = id?;
@@ -387,7 +387,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Has { ids } => {
-            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for id in ids {
                 if !repository.contains(&id).await? {
                     eprintln!("bitcache: blob not found: {}", id.to_hex());
@@ -400,7 +400,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Get { ids } => {
-            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             let mut stdout = tokio::io::stdout();
             for id in ids {
                 let Some(blob) = repository.get(&id).await? else {
@@ -418,7 +418,7 @@ pub async fn main() -> Result<(), SysexitsError> {
 
         Command::Put { format, ttl, paths } => {
             let options = PutOptions::new().with_ttl(ttl);
-            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for path in paths {
                 let buffer = tokio::fs::read(&path).await?;
                 let bytes = Bytes::from(buffer);
@@ -443,7 +443,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Rm { ids } => {
-            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for id in ids {
                 if !repository.remove(&id).await? {
                     eprintln!("bitcache: blob not found: {}", id.to_hex());
@@ -460,13 +460,13 @@ pub async fn main() -> Result<(), SysexitsError> {
                 eprintln!("bitcache: refusing to clear the repository without --force");
                 return Err(SysexitsError::EX_USAGE);
             }
-            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             repository.clear().await?;
             Ok(())
         },
 
         Command::Export { output } => {
-            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             let output_file = tokio::fs::File::create(&output).await?;
             let mut tarball = tokio_tar::Builder::new(output_file);
             tarball.mode(tokio_tar::HeaderMode::Deterministic);
@@ -500,27 +500,27 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Push { remotes } => {
-            let local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for remote in remotes {
-                let mut remote_repository = bitcache::open(&remote)?;
+                let mut remote_repository = bitcache::open(&remote).await?;
                 sync(&local_repository, &mut remote_repository).await?;
             }
             Ok(())
         },
 
         Command::Pull { remotes } => {
-            let mut local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let mut local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for remote in remotes {
-                let remote_repository = bitcache::open(&remote)?;
+                let remote_repository = bitcache::open(&remote).await?;
                 sync(&remote_repository, &mut local_repository).await?;
             }
             Ok(())
         },
 
         Command::Sync { remotes } => {
-            let mut local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let mut local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for remote in remotes {
-                let mut remote_repository = bitcache::open(&remote)?;
+                let mut remote_repository = bitcache::open(&remote).await?;
                 sync(&remote_repository, &mut local_repository).await?;
                 sync(&local_repository, &mut remote_repository).await?;
             }

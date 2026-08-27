@@ -13,12 +13,10 @@ CREATE TABLE IF NOT EXISTS "bitcache_config" (
 );
 
 INSERT INTO "bitcache_config" ("key", "val") VALUES ('schema', 1);
-INSERT INTO "bitcache_config" ("key", "val") VALUES ('epoch', 1767225600); -- 2026-01-01T00:00:00Z
 
 CREATE TABLE IF NOT EXISTS "bitcache_blob" (
-    "id" integer NOT NULL,
+    "id" integer PRIMARY KEY AUTOINCREMENT,
     "blake3" blob NOT NULL,
-    PRIMARY KEY ("id" AUTOINCREMENT),
     UNIQUE ("blake3"),
     CHECK (length("blake3") = 32)
 );

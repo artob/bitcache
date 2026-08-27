@@ -4,20 +4,20 @@ use crate::OpenError;
 use bitcache_core::{DynRepository, RepositoryError};
 
 #[cfg(feature = "std")]
-pub fn open_env(
+pub async fn open_env(
     name: impl AsRef<str>,
     default_value: impl AsRef<str>,
 ) -> Result<alloc::boxed::Box<DynRepository<'static, RepositoryError>>, OpenError> {
     use std::env::VarError;
     match std::env::var(name.as_ref()) {
-        Ok(url) => open(url),
-        Err(VarError::NotPresent) => open(default_value.as_ref()),
+        Ok(url) => open(url).await,
+        Err(VarError::NotPresent) => open(default_value.as_ref()).await,
         Err(VarError::NotUnicode(_)) => Err(OpenError::InvalidUrl),
     }
 }
 
 /// Opens a Bitcache repository based on the given URL.
-pub fn open(
+pub async fn open(
     url: impl AsRef<str>,
 ) -> Result<alloc::boxed::Box<DynRepository<'static, RepositoryError>>, OpenError> {
     let url = url.as_ref();
@@ -62,10 +62,10 @@ pub fn open(
             bitcache_valkey::ValkeyRepository::open(url)?,
         )),
 
-        // #[cfg(any(feature = "turso", feature = "sqlite"))]
-        // "sqlite" => Ok(DynRepository::new_box(bitcache_turso::TursoRepository::open( // TODO
-        //     url,
-        // )?)),
+        #[cfg(any(feature = "turso", feature = "sqlite"))]
+        "sqlite" => Ok(DynRepository::new_box(
+            bitcache_turso::TursoRepository::open(url).await.unwrap(),
+        )),
         _ => Err(OpenError::UnknownAdapter),
     }
 }

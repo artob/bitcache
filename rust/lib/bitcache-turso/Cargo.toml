@@ -31,3 +31,6 @@ unstable = []
 [dependencies]
 bitcache-core = { workspace = true, features = [] }
 turso = { workspace = true, features = [] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
