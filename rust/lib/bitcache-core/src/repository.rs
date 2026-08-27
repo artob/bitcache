@@ -1,8 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
-use crate::{Blob, Id, ListOptions};
+use crate::{Blob, Id, ListOptions, PutOptions};
 use bytes::Bytes;
-use core::future::Future;
+use core::{future::Future, time::Duration};
 use futures_core::Stream;
 use futures_util::{StreamExt, stream};
 
@@ -64,6 +64,45 @@ pub trait Repository: Send + Sync {
     /// Stores the given data as a blob, returning its content-derived ID.
     fn put(&mut self, data: Bytes) -> impl Future<Output = Result<Id, Self::Error>> + Send;
 
+    /// Stores the given data as a blob, with options, returning its
+    /// content-derived ID.
+    ///
+    /// When [`PutOptions::ttl`] is set, repositories that support blob
+    /// expiration arrange for the blob to expire that long after it is
+    /// stored — where possible atomically, as part of the store itself.
+    ///
+    /// The default implementation stores the blob with [`Repository::put`]
+    /// and then applies any TTL with [`Repository::set_expiry`], on a
+    /// best-effort basis: repositories that don't support blob expiration
+    /// store the blob persistently. Use [`Repository::set_expiry`] directly
+    /// to detect whether expiration is supported.
+    fn put_with_options(
+        &mut self,
+        data: Bytes,
+        options: PutOptions,
+    ) -> impl Future<Output = Result<Id, Self::Error>> + Send {
+        async move {
+            let id = self.put(data).await?;
+            if let Some(expires_nanos) = options.expires_nanos() {
+                self.set_expiry(&id, Some(expires_nanos)).await?;
+            }
+            Ok(id)
+        }
+    }
+
+    /// Stores the given data as a blob that expires after the given
+    /// time-to-live, returning its content-derived ID.
+    ///
+    /// This is shorthand for [`Repository::put_with_options`] with
+    /// [`PutOptions::ttl`] set; the same expiration-support caveats apply.
+    fn put_with_ttl(
+        &mut self,
+        data: Bytes,
+        ttl: Option<Duration>,
+    ) -> impl Future<Output = Result<Id, Self::Error>> + Send {
+        self.put_with_options(data, PutOptions::new().with_ttl(ttl))
+    }
+
     /// Removes the blob with the given ID, if present.
     ///
     /// Returns `true` if a blob was removed, or `false` if no blob with the
@@ -80,7 +119,7 @@ pub trait Repository: Send + Sync {
     /// Returns `true` if the blob's expiration was updated, or `false` if
     /// no blob with the given ID was present or if the repository does not
     /// support blob expiration (the default).
-    fn expire(
+    fn set_expiry(
         &mut self,
         id: &Id,
         expires_nanos: Option<u64>,

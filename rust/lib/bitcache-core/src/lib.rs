@@ -73,6 +73,9 @@ pub use list_options::*;
 mod open_error;
 pub use open_error::*;
 
+mod put_options;
+pub use put_options::*;
+
 mod repository;
 pub use repository::*;
 

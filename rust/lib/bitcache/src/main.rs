@@ -1,7 +1,7 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache::{
-    Bytes, DynRepository, Id, IdEncoding, ListOptions, Repository, RepositoryError,
+    Bytes, DynRepository, Id, IdEncoding, ListOptions, PutOptions, Repository, RepositoryError,
     futures_util::StreamExt,
 };
 use clientele::{
@@ -104,12 +104,15 @@ enum Command {
         #[arg(short, long, value_name = "FORMAT", default_value = "hex")]
         format: IdEncoding,
 
-        /// Expire the stored blob(s) after the given number of seconds.
+        /// Expire the stored blob(s) after the given duration.
+        ///
+        /// Accepts a plain number of seconds (e.g. "90") or a
+        /// human-friendly duration (e.g. "90s", "2m30s", "1h", "7d").
         ///
         /// Requires a repository backend that supports blob expiration
         /// (e.g., Valkey); exits with an error otherwise.
-        #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..))]
-        ttl: Option<u64>,
+        #[arg(long, value_name = "DURATION", value_parser = parse_ttl)]
+        ttl: Option<std::time::Duration>,
 
         /// The paths to the file(s) to store.
         #[arg(value_name = "FILES")]
@@ -236,6 +239,16 @@ fn subcommand_help_sections(command: &clap::Command) -> String {
         output.push('\n');
     }
     output
+}
+
+/// Parses a time-to-live duration, given either as a plain number of
+/// seconds (e.g. "90") or in a human-friendly format (e.g. "2m30s").
+fn parse_ttl(input: &str) -> Result<std::time::Duration, String> {
+    let ttl = clientele::crates::duration_str::parse_std(input)?;
+    if ttl.is_zero() {
+        return Err(String::from("the duration must be nonzero"));
+    }
+    Ok(ttl)
 }
 
 /// Parses command-line options, using a help template that groups the
@@ -397,18 +410,18 @@ pub async fn main() -> Result<(), SysexitsError> {
         },
 
         Command::Put { format, ttl, paths } => {
+            let options = PutOptions::new().with_ttl(ttl);
             let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
             for path in paths {
                 let buffer = tokio::fs::read(&path).await?;
                 let bytes = Bytes::from(buffer);
-                let id = repository.put(bytes).await?;
-                if let Some(secs) = ttl {
-                    let expires_nanos = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_nanos() as u64
-                        + secs * 1_000_000_000;
-                    if !repository.expire(&id, Some(expires_nanos)).await? {
+                let id = repository.put_with_ttl(bytes, ttl).await?;
+                // The TTL (if any) was already applied by the store above,
+                // atomically where supported; this re-set of the same
+                // expiration merely verifies that the repository supports
+                // expiration at all, so that `--ttl` isn't silently ignored:
+                if let Some(expires_nanos) = options.expires_nanos() {
+                    if !repository.set_expiry(&id, Some(expires_nanos)).await? {
                         eprintln!("bitcache: repository does not support blob expiration");
                         return Err(SysexitsError::EX_UNAVAILABLE);
                     }

@@ -2,7 +2,8 @@
 
 use alloc::{format, string::String, string::ToString, sync::Arc, vec, vec::Vec};
 use bitcache_core::{
-    Blob, BlobMetadata, Bytes, Id, ListOptions, OpenError, Repository, RepositoryError, Stream,
+    Blob, BlobMetadata, Bytes, Id, ListOptions, OpenError, PutOptions, Repository, RepositoryError,
+    Stream,
     futures_util::{StreamExt, TryStreamExt, future, stream},
 };
 use core::time::Duration;
@@ -38,7 +39,7 @@ const PAGE_SIZE: usize = 256;
 /// TTL. A default time-to-live for stored blobs can be configured via
 /// [`ValkeyRepository::with_ttl`] or a `ttl` URL query parameter (in
 /// seconds), and the expiration of an individual blob can be set or cleared
-/// with [`Repository::expire`]. A fetched blob's expiration time, if
+/// with [`Repository::set_expiry`]. A fetched blob's expiration time, if
 /// any, is reported by its [`BlobMetadata::expires`](BlobMetadata).
 ///
 /// Expired blobs disappear from [`Repository::contains`],
@@ -131,6 +132,9 @@ impl ValkeyRepository {
     /// after it was (last) stored; storing an already-present blob resets
     /// its clock. When unset (the default), stored blobs are persistent,
     /// and storing an already-present blob clears any expiration it had.
+    /// A [`PutOptions::ttl`] passed to [`Repository::put_with_options`]
+    /// (or a TTL passed to [`Repository::put_with_ttl`]) overrides this
+    /// default.
     pub fn with_ttl(mut self, ttl: impl Into<Option<Duration>>) -> Self {
         self.ttl = ttl.into();
         self
@@ -209,9 +213,31 @@ impl Repository for ValkeyRepository {
     }
 
     async fn put(&mut self, data: Bytes) -> Result<Id, Self::Error> {
+        self.put_with_ttl(data, None).await
+    }
+
+    /// Stores the blob and applies any TTL atomically, as part of the
+    /// storing transaction itself. A [`PutOptions::ttl`] overrides the
+    /// repository's default TTL, if any.
+    async fn put_with_options(
+        &mut self,
+        data: Bytes,
+        options: PutOptions,
+    ) -> Result<Id, Self::Error> {
+        self.put_with_ttl(data, options.ttl).await
+    }
+
+    /// Stores the blob and applies the TTL atomically, as part of the
+    /// storing transaction itself. Absent an explicit TTL, the
+    /// repository's default TTL (if any) applies.
+    async fn put_with_ttl(
+        &mut self,
+        data: Bytes,
+        ttl: Option<Duration>,
+    ) -> Result<Id, Self::Error> {
         let id = Id::of(&data);
-        let expiration = self
-            .ttl
+        let expiration = ttl
+            .or(self.ttl)
             .map(|ttl| Expiration::PX(ttl.as_millis().max(1) as i64));
         let client = self.connect().await?;
         let trx = client.multi();
@@ -241,7 +267,11 @@ impl Repository for ValkeyRepository {
         Ok(removed > 0)
     }
 
-    async fn expire(&mut self, id: &Id, expires_nanos: Option<u64>) -> Result<bool, Self::Error> {
+    async fn set_expiry(
+        &mut self,
+        id: &Id,
+        expires_nanos: Option<u64>,
+    ) -> Result<bool, Self::Error> {
         let client = self.connect().await?;
         let key = Self::blob_key(id);
         let result: i64 = match expires_nanos {
