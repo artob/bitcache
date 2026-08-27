@@ -70,6 +70,25 @@ pub trait Repository: Send + Sync {
     /// given ID was present.
     fn remove(&mut self, id: &Id) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
+    /// Sets or clears the expiration time of the blob with the given ID.
+    ///
+    /// The expiration time is given in nanoseconds since the Unix epoch;
+    /// passing `None` clears any expiration, making the blob persistent.
+    /// The expiration time of a fetched blob is reported by its
+    /// [`BlobMetadata::expires`](crate::BlobMetadata) metadata.
+    ///
+    /// Returns `true` if the blob's expiration was updated, or `false` if
+    /// no blob with the given ID was present or if the repository does not
+    /// support blob expiration (the default).
+    fn expire(
+        &mut self,
+        id: &Id,
+        expires_nanos: Option<u64>,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        let _ = (id, expires_nanos);
+        async { Ok(false) }
+    }
+
     /// Removes all blobs, resetting the repository to an empty state.
     fn clear(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send;
 

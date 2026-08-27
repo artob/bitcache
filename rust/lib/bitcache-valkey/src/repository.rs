@@ -12,7 +12,6 @@ use fred::{
     interfaces::{ClientLike, KeysInterface, SortedSetsInterface, TransactionInterface},
     types::{Expiration, Value, config::Config},
 };
-use std::time::SystemTime;
 use tokio::sync::OnceCell;
 use url::Url;
 
@@ -39,7 +38,7 @@ const PAGE_SIZE: usize = 256;
 /// TTL. A default time-to-live for stored blobs can be configured via
 /// [`ValkeyRepository::with_ttl`] or a `ttl` URL query parameter (in
 /// seconds), and the expiration of an individual blob can be set or cleared
-/// with [`ValkeyRepository::expire`]. A fetched blob's expiration time, if
+/// with [`Repository::expire`]. A fetched blob's expiration time, if
 /// any, is reported by its [`BlobMetadata::expires`](BlobMetadata).
 ///
 /// Expired blobs disappear from [`Repository::contains`],
@@ -147,34 +146,6 @@ impl ValkeyRepository {
         &self.client
     }
 
-    /// Sets or clears the expiration time of the blob with the given ID.
-    ///
-    /// Returns `true` if the expiration was updated, or `false` if no blob
-    /// with the given ID was present. Passing `None` makes the blob
-    /// persistent (in which case `false` is also returned if the blob had
-    /// no expiration to clear).
-    pub async fn expire(
-        &mut self,
-        id: &Id,
-        expires: Option<SystemTime>,
-    ) -> Result<bool, RepositoryError> {
-        let client = self.connect().await?;
-        let key = Self::blob_key(id);
-        let result: i64 = match expires {
-            Some(expires) => {
-                let millis = expires
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as i64;
-                client
-                    .custom(cmd!("PEXPIREAT"), vec![key, millis.to_string()])
-                    .await?
-            },
-            None => client.persist(key).await?,
-        };
-        Ok(result > 0)
-    }
-
     /// The storage key for the blob with the given ID.
     fn blob_key(id: &Id) -> String {
         format!("{}{}", BLOB_KEY_PREFIX, id.to_hex())
@@ -268,6 +239,21 @@ impl Repository for ValkeyRepository {
         let _: () = trx.zrem(INDEX_KEY, id.to_hex().as_str()).await?;
         let (removed, _): (u64, u64) = trx.exec(true).await?;
         Ok(removed > 0)
+    }
+
+    async fn expire(&mut self, id: &Id, expires_nanos: Option<u64>) -> Result<bool, Self::Error> {
+        let client = self.connect().await?;
+        let key = Self::blob_key(id);
+        let result: i64 = match expires_nanos {
+            Some(nanos) => {
+                let millis = nanos / 1_000_000;
+                client
+                    .custom(cmd!("PEXPIREAT"), vec![key, millis.to_string()])
+                    .await?
+            },
+            None => client.persist(key).await?,
+        };
+        Ok(result > 0)
     }
 
     async fn clear(&mut self) -> Result<(), Self::Error> {

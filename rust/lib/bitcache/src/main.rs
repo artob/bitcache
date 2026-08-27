@@ -104,6 +104,13 @@ enum Command {
         #[arg(short, long, value_name = "FORMAT", default_value = "hex")]
         format: IdEncoding,
 
+        /// Expire the stored blob(s) after the given number of seconds.
+        ///
+        /// Requires a repository backend that supports blob expiration
+        /// (e.g., Valkey); exits with an error otherwise.
+        #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..))]
+        ttl: Option<u64>,
+
         /// The paths to the file(s) to store.
         #[arg(value_name = "FILES")]
         paths: Vec<PathBuf>,
@@ -389,12 +396,23 @@ pub async fn main() -> Result<(), SysexitsError> {
             Ok(())
         },
 
-        Command::Put { format, paths } => {
+        Command::Put { format, ttl, paths } => {
             let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
             for path in paths {
                 let buffer = tokio::fs::read(&path).await?;
                 let bytes = Bytes::from(buffer);
                 let id = repository.put(bytes).await?;
+                if let Some(secs) = ttl {
+                    let expires_nanos = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_nanos() as u64
+                        + secs * 1_000_000_000;
+                    if !repository.expire(&id, Some(expires_nanos)).await? {
+                        eprintln!("bitcache: repository does not support blob expiration");
+                        return Err(SysexitsError::EX_UNAVAILABLE);
+                    }
+                }
                 match format {
                     IdEncoding::Hex => println!("{}", id.to_hex()),
                     #[cfg(feature = "base58")]
