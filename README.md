@@ -125,22 +125,23 @@ Bitcache is a distributed content-addressable storage (CAS) system.
 Usage: bitcache [OPTIONS] [COMMAND]
 
 General commands:
-  id     Compute the BLAKE3 hash of the given file(s)
-  help   Print this message or the help of the given subcommand(s)
+  id      Compute the BLAKE3 hash of the given file(s)
+  help    Print this message or the help of the given subcommand(s)
 
 Current repository commands (`$BITCACHE_URL`, default `./.bitcache/`):
-  init   Initialize a new repository in `./.bitcache/`
-  list   List the IDs of the blobs in the repository, in ascending order
-  has    Check whether the repository contains blob(s) with the given ID(s)
-  get    Fetch blob(s) from the repository, writing their contents to stdout
-  put    Store the given file(s) into the repository as blob(s)
-  rm     Remove blob(s) with the given ID(s) from the repository
-  clear  Remove all blobs from the repository
+  init    Initialize a new repository in `./.bitcache/`
+  list    List the IDs of the blobs in the repository, in ascending order
+  has     Check whether the repository contains blob(s) with the given ID(s)
+  get     Fetch blob(s) from the repository, writing their contents to stdout
+  put     Store the given file(s) into the repository as blob(s)
+  rm      Remove blob(s) with the given ID(s) from the repository
+  clear   Remove all blobs from the repository
+  export  Export all blobs in the repository into a tarball
 
 Remote repository commands:
-  push   Copy blobs missing from the given remote repositories to them
-  pull   Copy blobs missing from the current repository from the given remotes
-  sync   Synchronize with the given remote repositories, in both directions
+  push    Copy blobs missing from the given remote repositories to them
+  pull    Copy blobs missing from the current repository from the given remotes
+  sync    Synchronize with the given remote repositories, in both directions
 
 Options::
       --color <COLOR>
@@ -166,6 +167,7 @@ Options::
 ```
 
 - [`bitcache clear`](#bitcache-clear) - Remove all blobs from the repository
+- [`bitcache export`](#bitcache-export) - Export all blobs in the repository into a tarball
 - [`bitcache get`](#bitcache-get) - Fetch blob(s) from the repository, writing their contents to stdout
 - [`bitcache has`](#bitcache-has) - Check whether the repository contains blob(s) with the given ID(s)
 - [`bitcache id`](#bitcache-id) - Compute the BLAKE3 hash of the given file(s)
@@ -205,6 +207,22 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
+```
+
+#### `bitcache export`
+
+```shellsession
+$ bitcache export --help
+Export all blobs in the repository into a tarball
+
+Usage: bitcache export [OPTIONS] --output <FILE>
+
+Options:
+      --color <COLOR>  Set the color output mode [default: auto] [possible values: auto, always, never]
+  -o, --output <FILE>  The path to the tarball file to create
+  -d, --debug          Enable debugging output
+  -v, --verbose...     Enable verbose output (may be repeated for more verbosity)
+  -h, --help           Print help
 ```
 
 #### `bitcache get`

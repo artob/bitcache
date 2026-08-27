@@ -1,8 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache::{
-    Bytes, DynRepository, Id, IdEncoding, ListOptions, PutOptions, Repository, RepositoryError,
-    futures_util::StreamExt,
+    Bytes, DynRepository, Id, IdEncoding, ListOptions, ListOrder, PutOptions, Repository,
+    RepositoryError, futures_util::StreamExt,
 };
 use clientele::{
     ColorChoiceExt, StandardOptions, SysexitsError,
@@ -141,6 +141,13 @@ enum Command {
         force: bool,
     },
 
+    /// Export all blobs in the repository into a tarball.
+    Export {
+        /// The path to the tarball file to create.
+        #[arg(short, long, value_name = "FILE")]
+        output: PathBuf,
+    },
+
     /// Copy blobs missing from the given remote repositories to them.
     ///
     /// Every blob present in the current repository but absent from a remote
@@ -181,7 +188,7 @@ const COMMAND_SECTIONS: &[(&str, &[&str])] = &[
     ("General commands:", &["id", "help"]),
     (
         "Current repository commands (`$BITCACHE_URL`, default `./.bitcache/`):",
-        &["init", "list", "has", "get", "put", "rm", "clear"],
+        &["init", "list", "has", "get", "put", "rm", "clear", "export"],
     ),
     ("Remote repository commands:", &["push", "pull", "sync"]),
 ];
@@ -325,18 +332,18 @@ pub async fn main() -> Result<(), SysexitsError> {
             after,
             limit,
         } => {
-            let mut options = ListOptions::new();
+            let mut list_options = ListOptions::default().with_order(ListOrder::Ascending);
             if let Some(prefix) = prefix {
                 if prefix.len() > 64 || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
                     eprintln!("bitcache: invalid ID prefix: {}", prefix);
                     return Err(SysexitsError::EX_USAGE);
                 }
-                options = options.with_prefix(&prefix);
+                list_options = list_options.with_prefix(&prefix);
             }
-            options.after = after;
-            options.limit = limit;
+            list_options.after = after;
+            list_options.limit = limit;
             let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
-            let mut ids = std::pin::pin!(repository.list(options));
+            let mut ids = std::pin::pin!(repository.list(list_options));
             while let Some(id) = ids.next().await {
                 let id = id?;
                 match format {
@@ -455,6 +462,40 @@ pub async fn main() -> Result<(), SysexitsError> {
             }
             let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
             repository.clear().await?;
+            Ok(())
+        },
+
+        Command::Export { output } => {
+            let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache")?;
+            let output_file = tokio::fs::File::create(&output).await?;
+            let mut tarball = tokio_tar::Builder::new(output_file);
+            tarball.mode(tokio_tar::HeaderMode::Deterministic);
+            let list_options = ListOptions::default().with_order(ListOrder::Ascending);
+            let mut ids = std::pin::pin!(repository.list(list_options));
+            while let Some(id) = ids.next().await {
+                let id = id?;
+                let Some(blob) = repository.get(&id).await? else {
+                    continue; // unreachable by contract
+                };
+                let mut header = tokio_tar::Header::new_gnu();
+                header.set_path(id.to_hex().to_string())?;
+                header.set_size(blob.len());
+                header.set_mode(0o444);
+                if let Some(modified) = blob.metadata().created_secs() {
+                    header.set_mtime(modified);
+                }
+                if let Some(header) = header.as_gnu_mut() {
+                    if let Some(changed) = blob.metadata().created_secs() {
+                        header.set_ctime(changed);
+                    }
+                    if let Some(accessed) = blob.metadata().accessed_secs() {
+                        header.set_atime(accessed);
+                    }
+                }
+                header.set_cksum();
+                tarball.append(&header, blob.read()).await?;
+            }
+            tarball.finish().await?;
             Ok(())
         },
 

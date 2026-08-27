@@ -23,7 +23,7 @@ pub trait Repository: Send + Sync {
     /// Returns `true` if the repository contains no blobs.
     fn is_empty(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send {
         async {
-            let mut ids = core::pin::pin!(self.list(ListOptions::new().with_limit(1)));
+            let mut ids = core::pin::pin!(self.list(ListOptions::default().with_limit(1)));
             match next(&mut ids).await {
                 None => Ok(true),
                 Some(result) => result.map(|_| false),

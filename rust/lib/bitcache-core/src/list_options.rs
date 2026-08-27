@@ -3,11 +3,22 @@
 use crate::{ID_LEN, Id};
 use arrayvec::ArrayString;
 
+/// The order in which to enumerate IDs.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ListOrder {
+    #[default]
+    Ascending,
+    Descending,
+}
+
 /// Options for enumerating the blob IDs in a repository.
 ///
 /// See [`Repository::list`](crate::Repository::list).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ListOptions {
+    /// The order in which to enumerate IDs.
+    pub order: Option<ListOrder>,
+
     /// Enumerate only IDs whose hexadecimal encoding begins with this prefix.
     pub prefix: Option<ArrayString<{ 2 * ID_LEN }>>,
 
@@ -27,6 +38,11 @@ pub struct ListOptions {
 impl ListOptions {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_order(mut self, order: ListOrder) -> Self {
+        self.order = Some(order);
+        self
     }
 
     /// Restricts enumeration to IDs whose hexadecimal encoding begins with
