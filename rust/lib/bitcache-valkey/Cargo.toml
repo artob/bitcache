@@ -24,10 +24,11 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = ["all", "std"]
 all = []
-alloc = []
-std = ["alloc"]
+alloc = ["bitcache-core/alloc"]
+std = ["alloc", "bitcache-core/std"]
 unstable = []
 
 [dependencies]
 bitcache-core = { workspace = true, features = ["fred"] }
-fred = { workspace = true }
+fred = { workspace = true, features = ["i-keys", "i-sorted-sets"] }
+tokio = { workspace = true, features = ["sync"] }

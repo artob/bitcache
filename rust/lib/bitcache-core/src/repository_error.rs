@@ -13,6 +13,10 @@ pub enum RepositoryError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
+    #[cfg(feature = "fred")]
+    #[error(transparent)]
+    Fred(#[from] fred::error::Error),
+
     #[cfg(feature = "opendal")]
     #[error(transparent)]
     Opendal(opendal::Error),
@@ -41,6 +45,8 @@ impl From<RepositoryError> for clientele::SysexitsError {
         match input {
             #[cfg(feature = "std")]
             RepositoryError::Io(_) => EX_IOERR,
+            #[cfg(feature = "fred")]
+            RepositoryError::Fred(_) => EX_IOERR,
             #[cfg(feature = "opendal")]
             RepositoryError::Opendal(error) => EX_IOERR,
             _ => EX_SOFTWARE,

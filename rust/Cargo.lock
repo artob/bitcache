@@ -480,6 +480,7 @@ version = "0.0.3"
 dependencies = [
  "bitcache-core",
  "fred",
+ "tokio",
 ]
 
 [[package]]

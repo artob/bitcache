@@ -28,7 +28,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["all", "std"]
-all = ["auto-register", "base58", "fs", "heap"]
+all = ["auto-register", "base58", "fs", "heap", "valkey"]
 alloc = [
     "bitcache-core/alloc",
     "bitcache-fs?/alloc",

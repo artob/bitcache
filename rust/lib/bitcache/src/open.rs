@@ -49,12 +49,10 @@ pub fn open(
     }
 
     #[cfg(feature = "valkey")]
-    for prefix in ["valkey:", "redis:"] {
-        if let Some(url) = url.strip_prefix(prefix) {
-            //return Ok(DynRepository::new_box(
-            //    bitcache_valkey::ValkeyRepository::open(url)?, // TODO
-            //));
-        }
+    if url.starts_with("valkey:") || url.starts_with("redis:") {
+        return Ok(DynRepository::new_box(
+            bitcache_valkey::ValkeyRepository::open(url)?,
+        ));
     }
 
     Err(OpenError::UnknownAdapter)

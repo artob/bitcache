@@ -19,6 +19,10 @@ pub enum OpenError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
+    #[cfg(feature = "fred")]
+    #[error(transparent)]
+    Fred(#[from] fred::error::Error),
+
     #[cfg(feature = "opendal")]
     #[error(transparent)]
     Opendal(opendal::Error),
