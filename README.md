@@ -118,6 +118,419 @@ bundle add bitcache
 
 ```shellsession
 $ bitcache --help
+Bitcache is a distributed content-addressable storage (CAS) system.
+
+Usage: bitcache [OPTIONS] [COMMAND]
+
+General commands:
+  id     Compute the BLAKE3 hash of the given file(s)
+  help   Print this message or the help of the given subcommand(s)
+
+Current repository commands (`$BITCACHE_URL`, default `./.bitcache/`):
+  init   Initialize a new repository in `./.bitcache/`
+  list   List the IDs of the blobs in the repository, in ascending order
+  has    Check whether the repository contains blob(s) with the given ID(s)
+  get    Fetch blob(s) from the repository, writing their contents to stdout
+  put    Store the given file(s) into the repository as blob(s)
+  rm     Remove blob(s) with the given ID(s) from the repository
+  clear  Remove all blobs from the repository
+
+Remote repository commands:
+  push   Copy blobs missing from the given remote repositories to them
+  pull   Copy blobs missing from the current repository from the given remotes
+  sync   Synchronize with the given remote repositories, in both directions
+
+Options::
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -d, --debug
+          Enable debugging output
+
+      --license
+          Show license information
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -V, --version
+          Print version information
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache clear`
+
+```shellsession
+$ bitcache clear --help
+Remove all blobs from the repository.
+
+As a safety measure, this requires the `--force` flag; without it, nothing is removed and the command exits with a usage error.
+
+Usage: bitcache clear [OPTIONS]
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -f, --force
+          Actually perform the operation; without this, nothing is removed
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache get`
+
+```shellsession
+$ bitcache get --help
+Fetch blob(s) from the repository, writing their contents to stdout.
+
+Exits with a nonzero status unless all of the given blobs were found in the repository.
+
+Usage: bitcache get [OPTIONS] [IDS]...
+
+Arguments:
+  [IDS]...
+          The IDs of the blob(s) to fetch
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache has`
+
+```shellsession
+$ bitcache has --help
+Check whether the repository contains blob(s) with the given ID(s).
+
+With `--verbose`, prints `true` or `false` for each ID.
+
+Exits with a nonzero status unless all of the given blobs were found in the repository.
+
+Usage: bitcache has [OPTIONS] [IDS]...
+
+Arguments:
+  [IDS]...
+          The IDs of the blob(s) to check for
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache id`
+
+```shellsession
+$ bitcache id --help
+Compute the BLAKE3 hash of the given file(s).
+
+Prints the ID each file would have as a blob, one per line, without accessing or modifying any repository.
+
+Usage: bitcache id [OPTIONS] [FILES]...
+
+Arguments:
+  [FILES]...
+          The paths to the file(s) to hash
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -f, --format <FORMAT>
+          The format to use for the hash output
+
+          Possible values:
+          - hex:    Hexadecimal (aka Base16)
+          - base58: Base58
+
+          [default: hex]
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache init`
+
+```shellsession
+$ bitcache init --help
+Initialize a new repository in `./.bitcache/`.
+
+Creates an empty repository in the `./.bitcache/` directory of the current working directory; `$BITCACHE_URL` is ignored.
+
+Usage: bitcache init [OPTIONS]
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache list`
+
+```shellsession
+$ bitcache list --help
+List the IDs of the blobs in the repository, in ascending order.
+
+With `--verbose` (repeatable), appends further tab-separated columns to each line: the blob's byte size, media type, creation timestamp, and last-access timestamp.
+
+Usage: bitcache list [OPTIONS]
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -f, --format <FORMAT>
+          The format to use for the hash output
+
+          Possible values:
+          - hex:    Hexadecimal (aka Base16)
+          - base58: Base58
+
+          [default: hex]
+
+  -d, --debug
+          Enable debugging output
+
+  -p, --prefix <PREFIX>
+          List only IDs whose hexadecimal encoding begins with this prefix
+
+  -a, --after <ID>
+          List only IDs ordered strictly after this one
+
+  -n, --limit <COUNT>
+          List at most this many IDs
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache pull`
+
+```shellsession
+$ bitcache pull --help
+Copy blobs missing from the current repository from the given remotes.
+
+Every blob present in a remote repository but absent from the current repository is copied into the current repository.
+
+Usage: bitcache pull [OPTIONS] [URLS]...
+
+Arguments:
+  [URLS]...
+          The URLs of the remote repositories to pull from
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache push`
+
+```shellsession
+$ bitcache push --help
+Copy blobs missing from the given remote repositories to them.
+
+Every blob present in the current repository but absent from a remote repository is copied to that remote repository.
+
+Usage: bitcache push [OPTIONS] [URLS]...
+
+Arguments:
+  [URLS]...
+          The URLs of the remote repositories to push to
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache put`
+
+```shellsession
+$ bitcache put --help
+Store the given file(s) into the repository as blob(s).
+
+Prints the ID of each stored blob, one per line. Since blobs are content addressed, storing already-present content is harmless: the blob is simply retained with the same ID.
+
+Usage: bitcache put [OPTIONS] [FILES]...
+
+Arguments:
+  [FILES]...
+          The paths to the file(s) to store
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -f, --format <FORMAT>
+          The format to use for the hash output
+
+          Possible values:
+          - hex:    Hexadecimal (aka Base16)
+          - base58: Base58
+
+          [default: hex]
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache rm`
+
+```shellsession
+$ bitcache rm --help
+Remove blob(s) with the given ID(s) from the repository.
+
+Exits with a nonzero status unless all of the given blobs were found in the repository.
+
+Usage: bitcache rm [OPTIONS] [IDS]...
+
+Arguments:
+  [IDS]...
+          The IDs of the blob(s) to remove
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache sync`
+
+```shellsession
+$ bitcache sync --help
+Synchronize with the given remote repositories, in both directions.
+
+Equivalent to a `pull` followed by a `push` for each given remote repository: afterwards, the current repository and every given remote repository all contain the union of their blobs.
+
+Usage: bitcache sync [OPTIONS] [URLS]...
+
+Arguments:
+  [URLS]...
+          The URLs of the remote repositories to synchronize with
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
 ```
 
 ### Storage Adapters
@@ -138,6 +551,7 @@ $ bitcache --help
 | `opendal+s3:`         | bitcache-opendal  | ✓    | ✓    | ✓    | ✓    | ✓ |
 | `opendal+sftp:`       | bitcache-opendal  | ✓    | ✓    | ✓    | ✓    | ? |
 | `opendal+sled:`       | bitcache-opendal  | ✓    | ✓    | ✓    | ✓    | ✓ |
+| `valkey:`             | bitcache-valkey   | ✓    | ✓    | ✓    | ✓    | ✓ |
 
 #### File System Adapter
 
