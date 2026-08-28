@@ -1,6 +1,6 @@
 // This is free and unencumbered software released into the public domain.
 
-use crate::{Blob, Id, ListOptions, PutOptions};
+use crate::{Blob, Id, ListOptions, PutOptions, RepositoryCapabilities};
 use bytes::Bytes;
 use core::{future::Future, time::Duration};
 use futures_core::Stream;
@@ -19,6 +19,15 @@ use futures_util::{StreamExt, stream};
 pub trait Repository: Send + Sync {
     /// The error type returned by repository operations.
     type Error: Send + Sync;
+
+    /// Returns the optional functionality supported by this repository.
+    ///
+    /// Capability inspection is local and does not access the backing store.
+    /// Clients should inspect capabilities before requesting metadata that they
+    /// require the repository to preserve.
+    fn capabilities(&self) -> RepositoryCapabilities {
+        RepositoryCapabilities::NONE
+    }
 
     /// Returns `true` if the repository contains no blobs.
     fn is_empty(&self) -> impl Future<Output = Result<bool, Self::Error>> + Send {
@@ -72,21 +81,26 @@ pub trait Repository: Send + Sync {
     /// it — where possible atomically, as part of the store itself.
     ///
     /// The default implementation stores the blob with [`Repository::put`]
-    /// and then applies the requested metadata on a best-effort basis.
-    /// Unsupported metadata is ignored; use [`Repository::set_expiry`] or
-    /// [`Repository::set_media_type`] directly to detect support.
+    /// and then applies supported metadata on a best-effort basis. It consults
+    /// [`Repository::capabilities`] first and does not attempt metadata
+    /// operations the repository reports as unsupported.
     fn put_with_options(
         &mut self,
         data: Bytes,
         options: PutOptions,
     ) -> impl Future<Output = Result<Id, Self::Error>> + Send {
         async move {
+            let metadata_capabilities = self.capabilities().blob_metadata();
             let id = self.put(data).await?;
-            if let Some(expires_nanos) = options.expires_nanos() {
+            if metadata_capabilities.expires()
+                && let Some(expires_nanos) = options.expires_nanos()
+            {
                 self.set_expiry(&id, Some(expires_nanos)).await?;
             }
             #[cfg(feature = "alloc")]
-            if let Some(media_type) = options.media_type() {
+            if metadata_capabilities.media_type()
+                && let Some(media_type) = options.media_type()
+            {
                 self.set_media_type(&id, Some(media_type)).await?;
             }
             Ok(id)

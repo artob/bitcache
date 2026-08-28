@@ -2,8 +2,8 @@
 
 use alloc::{borrow::Cow, boxed::Box, string::String, vec, vec::Vec};
 use bitcache_core::{
-    Blob, BlobMetadata, Bytes, Id, ListOptions, ListOrder, OpenError, PutOptions, Repository,
-    RepositoryError, Stream,
+    Blob, BlobMetadata, BlobMetadataCapabilities, Bytes, Id, ListOptions, ListOrder, OpenError,
+    PutOptions, Repository, RepositoryCapabilities, RepositoryError, Stream,
     futures_util::{StreamExt, TryStreamExt, stream},
 };
 use core::time::Duration;
@@ -183,6 +183,10 @@ impl TursoRepository {
 
 impl Repository for TursoRepository {
     type Error = RepositoryError;
+
+    fn capabilities(&self) -> RepositoryCapabilities {
+        RepositoryCapabilities::new().with_blob_metadata(BlobMetadataCapabilities::ALL)
+    }
 
     async fn is_empty(&self) -> Result<bool, Self::Error> {
         let connection = self.connect()?;

@@ -2,8 +2,8 @@
 
 use alloc::collections::{BTreeMap, btree_map::Entry};
 use bitcache_core::{
-    Blob, BlobMetadata, BoxError, Bytes, Id, ListOptions, Repository, RepositoryError, Stream,
-    futures_util::stream,
+    Blob, BlobMetadata, BlobMetadataCapabilities, BoxError, Bytes, Id, ListOptions, Repository,
+    RepositoryCapabilities, RepositoryError, Stream, futures_util::stream,
 };
 use core::{convert::Infallible, ops::Bound};
 
@@ -30,6 +30,13 @@ impl HeapRepository {
 impl Repository for HeapRepository {
     //type Error = Infallible;
     type Error = RepositoryError;
+
+    fn capabilities(&self) -> RepositoryCapabilities {
+        let metadata = BlobMetadataCapabilities::new();
+        #[cfg(feature = "std")]
+        let metadata = metadata.with_created().with_updated();
+        RepositoryCapabilities::new().with_blob_metadata(metadata)
+    }
 
     /// An O(1) shortcut, equivalent to counting the [`Repository::list`]
     /// enumeration.

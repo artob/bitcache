@@ -93,6 +93,12 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
     let temp_dir = TestDir::new();
     let repository_path = temp_dir.path().join("repository");
     let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    let metadata_capabilities = repository.capabilities().blob_metadata();
+    assert!(metadata_capabilities.created());
+    assert!(metadata_capabilities.updated());
+    assert!(metadata_capabilities.accessed());
+    assert!(metadata_capabilities.expires());
+    assert!(metadata_capabilities.media_type());
 
     // Store in-memory data and verify its filesystem-derived metadata.
     let memory_data = b"stored from memory";

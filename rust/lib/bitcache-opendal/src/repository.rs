@@ -6,7 +6,8 @@ use alloc::{
     string::{String, ToString},
 };
 use bitcache_core::{
-    Blob, BlobMetadata, Bytes, Id, ListOptions, OpenError, Repository, RepositoryError, Stream,
+    Blob, BlobMetadata, BlobMetadataCapabilities, Bytes, Id, ListOptions, OpenError, Repository,
+    RepositoryCapabilities, RepositoryError, Stream,
     futures_util::{StreamExt, TryFutureExt, TryStreamExt, future},
 };
 use opendal::{ErrorKind, Operator};
@@ -112,6 +113,11 @@ impl DalRepository {
 
 impl Repository for DalRepository {
     type Error = RepositoryError;
+
+    fn capabilities(&self) -> RepositoryCapabilities {
+        RepositoryCapabilities::new()
+            .with_blob_metadata(BlobMetadataCapabilities::new().with_updated())
+    }
 
     async fn contains(&self, id: &Id) -> Result<bool, Self::Error> {
         Ok(self.0.exists(&Self::path(id)).await?)

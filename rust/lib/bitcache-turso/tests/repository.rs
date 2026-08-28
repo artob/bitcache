@@ -12,6 +12,12 @@ use turso::{Builder, Value};
 async fn test_turso_repository() {
     let data = b"Hello, world!";
     let mut repository = TursoRepository::open(":memory:").await.unwrap();
+    let metadata_capabilities = repository.capabilities().blob_metadata();
+    assert!(metadata_capabilities.created());
+    assert!(metadata_capabilities.updated());
+    assert!(metadata_capabilities.accessed());
+    assert!(metadata_capabilities.expires());
+    assert!(metadata_capabilities.media_type());
 
     assert!(repository.is_empty().await.unwrap());
 

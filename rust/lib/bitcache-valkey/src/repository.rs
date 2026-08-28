@@ -2,8 +2,8 @@
 
 use alloc::{format, string::String, string::ToString, sync::Arc, vec, vec::Vec};
 use bitcache_core::{
-    Blob, BlobMetadata, Bytes, Id, ListOptions, OpenError, PutOptions, Repository, RepositoryError,
-    Stream,
+    Blob, BlobMetadata, BlobMetadataCapabilities, Bytes, Id, ListOptions, OpenError, PutOptions,
+    Repository, RepositoryCapabilities, RepositoryError, Stream,
     futures_util::{StreamExt, TryStreamExt, future, stream},
 };
 use core::time::Duration;
@@ -169,6 +169,11 @@ impl ValkeyRepository {
 
 impl Repository for ValkeyRepository {
     type Error = RepositoryError;
+
+    fn capabilities(&self) -> RepositoryCapabilities {
+        RepositoryCapabilities::new()
+            .with_blob_metadata(BlobMetadataCapabilities::new().with_expires())
+    }
 
     /// An O(1) shortcut, equivalent to counting the [`Repository::list`]
     /// enumeration.

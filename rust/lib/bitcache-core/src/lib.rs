@@ -79,6 +79,9 @@ pub use put_options::*;
 mod repository;
 pub use repository::*;
 
+mod repository_capabilities;
+pub use repository_capabilities::*;
+
 mod repository_error;
 pub use repository_error::*;
 

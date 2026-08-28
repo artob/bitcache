@@ -438,26 +438,20 @@ pub async fn main() -> Result<(), SysexitsError> {
                 .with_ttl(ttl)
                 .with_media_type(media_type.map(std::borrow::Cow::Owned));
             let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
+            let metadata_capabilities = repository.capabilities().blob_metadata();
+            if options.ttl.is_some() && !metadata_capabilities.expires() {
+                eprintln!("bitcache: repository does not support blob expiration");
+                return Err(SysexitsError::EX_UNAVAILABLE);
+            }
+            if options.media_type().is_some() && !metadata_capabilities.media_type() {
+                eprintln!("bitcache: repository does not support media-type metadata");
+                return Err(SysexitsError::EX_UNAVAILABLE);
+            }
             for path in paths {
                 let buffer = tokio::fs::read(&path).await?;
                 let bytes = Bytes::from(buffer);
                 let id = repository.put_with_options(bytes, options.clone()).await?;
-                // The TTL (if any) was already applied by the store above,
-                // atomically where supported; this re-set of the same
-                // expiration merely verifies that the repository supports
-                // expiration at all, so that `--ttl` isn't silently ignored:
-                if let Some(expires_nanos) = options.expires_nanos() {
-                    if !repository.set_expiry(&id, Some(expires_nanos)).await? {
-                        eprintln!("bitcache: repository does not support blob expiration");
-                        return Err(SysexitsError::EX_UNAVAILABLE);
-                    }
-                }
-                if let Some(media_type) = options.media_type() {
-                    if !repository.set_media_type(&id, Some(media_type)).await? {
-                        eprintln!("bitcache: repository does not support media-type metadata");
-                        return Err(SysexitsError::EX_UNAVAILABLE);
-                    }
-                }
+
                 match format {
                     IdEncoding::Hex => println!("{}", id.to_hex()),
                     #[cfg(feature = "base58")]

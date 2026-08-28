@@ -11,15 +11,17 @@ use core::time::Duration;
 pub struct PutOptions {
     /// Expire the blob this long after it is stored.
     ///
-    /// Honored by repositories that support blob expiration; others store
-    /// the blob persistently. See
+    /// Honored by repositories whose
+    /// [`BlobMetadataCapabilities::expires`](crate::BlobMetadataCapabilities::expires)
+    /// capability is set; others store the blob persistently. See
     /// [`Repository::put_with_options`](crate::Repository::put_with_options).
     pub ttl: Option<Duration>,
 
     /// The explicit media type (MIME type) of the blob's contents.
     ///
-    /// Honored by repositories that support media-type metadata; others store
-    /// the blob without it.
+    /// Honored by repositories whose
+    /// [`BlobMetadataCapabilities::media_type`](crate::BlobMetadataCapabilities::media_type)
+    /// capability is set; others store the blob without it.
     #[cfg(feature = "alloc")]
     pub media_type: Option<Cow<'static, str>>,
 }

@@ -2,8 +2,8 @@
 
 use crate::file_metadata::{self, ExtendedMetadata};
 use bitcache_core::{
-    Blob, BlobMetadata, Bytes, Id, ListOptions, ListOrder, PutOptions, Repository, RepositoryError,
-    Stream, futures_util::stream,
+    Blob, BlobMetadata, BlobMetadataCapabilities, Bytes, Id, ListOptions, ListOrder, PutOptions,
+    Repository, RepositoryCapabilities, RepositoryError, Stream, futures_util::stream,
 };
 #[cfg(unix)]
 use cap_std::fs_utf8::{MetadataExt, PermissionsExt};
@@ -37,7 +37,7 @@ static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 /// Note: except for [`FsRepository::put_file`], I/O is currently performed
 /// synchronously within the async methods.
 #[derive(Debug)]
-pub struct FsRepository(Dir, #[cfg(windows)] PathBuf);
+pub struct FsRepository(Dir, RepositoryCapabilities, #[cfg(windows)] PathBuf);
 
 impl FsRepository {
     /// Creates or opens a new repository at the given directory path.
@@ -63,12 +63,20 @@ impl FsRepository {
 
     #[cfg(not(windows))]
     fn from_dir(_path: &Utf8Path, dir: Dir) -> Result<Self, RepositoryError> {
-        Ok(Self(dir))
+        let mut repository = Self(dir, RepositoryCapabilities::NONE);
+        repository.1 = repository.detect_capabilities();
+        Ok(repository)
     }
 
     #[cfg(windows)]
     fn from_dir(path: &Utf8Path, dir: Dir) -> Result<Self, RepositoryError> {
-        Ok(Self(dir, std::fs::canonicalize(path.as_std_path())?))
+        let mut repository = Self(
+            dir,
+            RepositoryCapabilities::NONE,
+            std::fs::canonicalize(path.as_std_path())?,
+        );
+        repository.1 = repository.detect_capabilities();
+        Ok(repository)
     }
 
     /// The storage path for the blob with the given ID.
@@ -83,7 +91,36 @@ impl FsRepository {
 
     #[cfg(windows)]
     fn extended_path(&self, name: &str) -> Option<PathBuf> {
-        Some(self.1.join(name))
+        Some(self.2.join(name))
+    }
+
+    fn detect_capabilities(&self) -> RepositoryCapabilities {
+        let metadata = BlobMetadataCapabilities::new()
+            .with_created()
+            .with_accessed();
+        #[cfg(unix)]
+        let metadata = metadata.with_updated();
+        let metadata = if self.supports_extended_metadata() {
+            metadata.with_expires().with_media_type()
+        } else {
+            metadata
+        };
+        RepositoryCapabilities::new().with_blob_metadata(metadata)
+    }
+
+    fn supports_extended_metadata(&self) -> bool {
+        let Ok((name, file)) = self.create_temp_file() else {
+            return false;
+        };
+        let metadata = ExtendedMetadata {
+            expires: Some(1),
+            media_type: Some(String::from("application/x-bitcache-capability-probe")),
+        };
+        let path = self.extended_path(&name);
+        let supported = file_metadata::write(&file, path.as_deref(), &metadata).unwrap_or(false);
+        drop(file);
+        let _ = self.0.remove_file(name);
+        supported
     }
 
     /// Derives blob metadata from filesystem and extended metadata.
@@ -459,6 +496,10 @@ impl FsRepository {
 
 impl Repository for FsRepository {
     type Error = RepositoryError;
+
+    fn capabilities(&self) -> RepositoryCapabilities {
+        self.1
+    }
 
     async fn contains(&self, id: &Id) -> Result<bool, Self::Error> {
         Ok(self.open_live(id)?.is_some())
