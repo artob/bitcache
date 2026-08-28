@@ -121,6 +121,7 @@ tokio = [
 
 # CLI:
 cli = [
+    "all-adapters",
     "auto-register",
     "clientele",
     "clientele?/all",
