@@ -43,11 +43,15 @@ impl Drop for TestDir {
 }
 
 fn blob_path(repository_path: &Path, id: &Id) -> PathBuf {
-    repository_path.join(format!("{}.xz", id.to_hex().as_str()))
+    let hex = id.to_hex();
+    let hex = hex.as_str();
+    repository_path.join(&hex[..2]).join(format!("{hex}.xz"))
 }
 
 fn uncompressed_blob_path(repository_path: &Path, id: &Id) -> PathBuf {
-    repository_path.join(id.to_hex().as_str())
+    let hex = id.to_hex();
+    let hex = hex.as_str();
+    repository_path.join(&hex[..2]).join(hex)
 }
 
 fn xz_dictionary_size(path: &Path) -> u64 {
@@ -269,6 +273,7 @@ async fn test_compact_compresses_uncompressed_blobs() {
     let id = Id::of(&data);
     let uncompressed_path = uncompressed_blob_path(&repository_path, &id);
     let compressed_path = blob_path(&repository_path, &id);
+    fs::create_dir_all(uncompressed_path.parent().unwrap()).unwrap();
     fs::write(&uncompressed_path, &data).unwrap();
     set_xattr(
         &uncompressed_path,

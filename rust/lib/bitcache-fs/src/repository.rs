@@ -38,6 +38,13 @@ const XZ_MAGIC: &[u8; 6] = b"\xfd7zXZ\0";
 /// A process-local sequence used to make temporary filenames unique.
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
+/// The number of leading hexadecimal characters of the blob ID used to name
+/// the shard subdirectory a blob is stored in.
+const SHARD_PREFIX_LEN: usize = 2;
+
+/// The number of shard subdirectories (`00` through `ff` for a prefix of 2).
+const SHARD_COUNT: u32 = 1 << (4 * SHARD_PREFIX_LEN as u32);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BlobEncoding {
     Uncompressed,
@@ -89,8 +96,12 @@ impl AsyncRead for BlobFile {
 
 /// A repository backed by a local filesystem directory.
 ///
-/// Blobs are stored as flat files named by their hexadecimal IDs, with an
-/// `.xz` suffix when compressed. Access is capability-scoped to the directory
+/// Blobs are stored in shard subdirectories named after the first
+/// [`SHARD_PREFIX_LEN`] hexadecimal characters of the blob ID (`00` through
+/// `ff` by default), created lazily as blobs are stored. Within a shard,
+/// files are named by their full
+/// hexadecimal IDs, with an `.xz` suffix when compressed. Access is
+/// capability-scoped to the directory
 /// via [`cap_std`]. On Unix, extended
 /// metadata is also accessed through file handles. Windows extended metadata
 /// uses NTFS alternate data streams and therefore retains the canonical
@@ -141,14 +152,42 @@ impl FsRepository {
         Ok(repository)
     }
 
+    /// The names of all shard subdirectories, in ascending order.
+    fn shard_names() -> impl DoubleEndedIterator<Item = String> {
+        (0..SHARD_COUNT).map(|shard| std::format!("{shard:0width$x}", width = SHARD_PREFIX_LEN))
+    }
+
+    /// Creates the shard subdirectory for the given blob ID if it doesn't
+    /// already exist.
+    ///
+    /// Shard subdirectories are created lazily, on first store of a blob
+    /// whose ID falls within the shard.
+    fn ensure_shard_dir(&self, id: &Id) -> Result<(), RepositoryError> {
+        match self.0.create_dir(Self::shard_name(id)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// The shard subdirectory name for the blob with the given ID.
+    fn shard_name(id: &Id) -> String {
+        let hex = id.to_hex();
+        hex.as_str()[..SHARD_PREFIX_LEN].into()
+    }
+
     /// The uncompressed storage path for the blob with the given ID.
     fn path(id: &Id) -> String {
-        id.to_hex().as_str().into()
+        let hex = id.to_hex();
+        let hex = hex.as_str();
+        std::format!("{}/{}", &hex[..SHARD_PREFIX_LEN], hex)
     }
 
     /// The compressed storage path for the blob with the given ID.
     fn compressed_path(id: &Id) -> String {
-        std::format!("{}.xz", id.to_hex().as_str())
+        let hex = id.to_hex();
+        let hex = hex.as_str();
+        std::format!("{}/{}.xz", &hex[..SHARD_PREFIX_LEN], hex)
     }
 
     fn path_for(id: &Id, encoding: BlobEncoding) -> String {
@@ -441,6 +480,10 @@ impl FsRepository {
         }
 
         let path = Self::path_for(id, encoding);
+        if let Err(error) = self.ensure_shard_dir(id) {
+            let _ = self.0.remove_file(temp_name);
+            return Err(error);
+        }
         for _ in 0..4 {
             match self.0.hard_link(temp_name, &self.0, &path) {
                 Ok(()) => {
@@ -693,6 +736,10 @@ impl FsRepository {
         drop(temp_file);
 
         let compressed_name = Self::compressed_path(id);
+        if let Err(error) = self.ensure_shard_dir(id) {
+            let _ = self.0.remove_file(&temp_name);
+            return Err(error);
+        }
         if let Err(error) = self.0.rename(&temp_name, &self.0, &compressed_name) {
             let _ = self.0.remove_file(&temp_name);
             return Err(error.into());
@@ -707,10 +754,16 @@ impl FsRepository {
         }
     }
 
-    /// Collects all physical blob IDs, including expired blobs.
-    fn collect_physical_ids(&self) -> Result<Vec<Id>, RepositoryError> {
+    /// Collects the physical blob IDs in one shard subdirectory, including
+    /// expired blobs, sorted in ascending order.
+    fn collect_shard_ids(&self, shard: &str) -> Result<Vec<Id>, RepositoryError> {
+        let dir = match self.0.open_dir(shard) {
+            Ok(dir) => dir,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
         let mut ids = Vec::new();
-        for entry in self.0.entries()? {
+        for entry in dir.entries()? {
             let entry = entry?;
             if !entry.file_type()?.is_file() {
                 continue;
@@ -728,22 +781,29 @@ impl FsRepository {
         Ok(ids)
     }
 
-    /// Collects logically present IDs, filtering before applying the limit.
-    fn collect_live_ids(&self, options: &ListOptions) -> Result<Vec<Id>, RepositoryError> {
-        let mut ids = Vec::new();
-        for id in self.collect_physical_ids()? {
-            if options.matches(&id) && self.open_live(&id)?.is_some() {
-                ids.push(id);
-            }
+    /// Lazily yields batches of physical blob IDs, one shard subdirectory at
+    /// a time, including expired blobs.
+    ///
+    /// Only a single shard's IDs are materialized in memory at once. Batches
+    /// are yielded in ascending shard order (descending when requested), and
+    /// each batch is sorted accordingly, so concatenating the batches yields
+    /// all IDs in order.
+    fn physical_id_batches(
+        &self,
+        descending: bool,
+    ) -> impl Iterator<Item = Result<Vec<Id>, RepositoryError>> + '_ {
+        let mut shards: Vec<String> = Self::shard_names().collect();
+        if descending {
+            shards.reverse();
         }
-        ids.sort_unstable();
-        if options.order == Some(ListOrder::Descending) {
-            ids.reverse();
-        }
-        if let Some(limit) = options.limit {
-            ids.truncate(limit);
-        }
-        Ok(ids)
+        shards.into_iter().map(move |shard| {
+            self.collect_shard_ids(&shard).map(|mut ids| {
+                if descending {
+                    ids.reverse();
+                }
+                ids
+            })
+        })
     }
 
     /// Opens the blob with the given ID for asynchronous streaming reads.
@@ -1053,8 +1113,11 @@ impl Repository for FsRepository {
     async fn compact(&mut self) -> Result<(), Self::Error> {
         #[cfg(feature = "tokio")]
         {
-            for id in self.collect_physical_ids()? {
-                self.compact_blob(&id).await?;
+            let this = &*self;
+            for batch in this.physical_id_batches(false) {
+                for id in batch? {
+                    this.compact_blob(&id).await?;
+                }
             }
             Ok(())
         }
@@ -1064,12 +1127,17 @@ impl Repository for FsRepository {
     }
 
     async fn clear(&mut self) -> Result<(), Self::Error> {
-        for id in self.collect_physical_ids()? {
-            for encoding in [BlobEncoding::Uncompressed, BlobEncoding::Xz] {
-                match self.0.remove_file(Self::path_for(&id, encoding)) {
-                    Ok(()) => (),
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                    Err(error) => return Err(error.into()),
+        // Removes all blobs one shard batch at a time, preserving the shard
+        // subdirectories themselves.
+        let this = &*self;
+        for batch in this.physical_id_batches(false) {
+            for id in batch? {
+                for encoding in [BlobEncoding::Uncompressed, BlobEncoding::Xz] {
+                    match this.0.remove_file(Self::path_for(&id, encoding)) {
+                        Ok(()) => (),
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                        Err(error) => return Err(error.into()),
+                    }
                 }
             }
         }
@@ -1077,9 +1145,30 @@ impl Repository for FsRepository {
     }
 
     fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> {
-        stream::iter(match self.collect_live_ids(&options) {
-            Ok(ids) => ids.into_iter().map(Ok).collect(),
-            Err(error) => std::vec![Err(error)],
-        })
+        // Iterate one shard subdirectory batch at a time, reading and sorting
+        // only its entries; shards are visited in ID order, so the overall
+        // stream remains ordered while bounding memory use.
+        let descending = options.order == Some(ListOrder::Descending);
+        let limit = options.limit.unwrap_or(usize::MAX);
+        stream::iter(
+            self.physical_id_batches(descending)
+                .flat_map(move |batch| match batch {
+                    Ok(ids) => ids
+                        .into_iter()
+                        .filter(|id| options.matches(id))
+                        .map(|id| self.open_live(&id).map(|live| live.map(|_| id)))
+                        .filter_map(Result::transpose)
+                        .collect::<Vec<_>>(),
+                    Err(error) => std::vec![Err(error)],
+                })
+                .scan(false, |failed, item| {
+                    if *failed {
+                        return None;
+                    }
+                    *failed = item.is_err();
+                    Some(item)
+                })
+                .take(limit),
+        )
     }
 }
