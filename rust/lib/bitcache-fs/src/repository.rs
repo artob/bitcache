@@ -19,6 +19,11 @@ use std::{
     vec::Vec,
 };
 
+#[cfg(feature = "tokio")]
+use async_compression::tokio::bufread::XzDecoder;
+#[cfg(feature = "tokio")]
+use bitcache_core::tokio::io::{AsyncRead, BufReader};
+
 /// The buffer size used when streaming file contents.
 #[cfg(feature = "tokio")]
 const BUFFER_LEN: usize = 65_536;
@@ -26,10 +31,60 @@ const BUFFER_LEN: usize = 65_536;
 /// A process-local sequence used to make temporary filenames unique.
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BlobEncoding {
+    Uncompressed,
+    Xz,
+}
+
+struct PhysicalBlob {
+    name: String,
+    file: File,
+    extended: ExtendedMetadata,
+    encoding: BlobEncoding,
+}
+
+/// An asynchronous reader over an uncompressed blob's contents.
+///
+/// The underlying repository file may itself be either uncompressed or XZ
+/// compressed; callers always receive the original blob bytes.
+#[cfg(feature = "tokio")]
+pub struct BlobFile(std::pin::Pin<std::boxed::Box<dyn AsyncRead + Send>>);
+
+#[cfg(feature = "tokio")]
+impl std::fmt::Debug for BlobFile {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("BlobFile").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl BlobFile {
+    fn new(file: File, encoding: BlobEncoding) -> Self {
+        let file = bitcache_core::tokio::fs::File::from_std(file.into_std());
+        match encoding {
+            BlobEncoding::Uncompressed => Self(std::boxed::Box::pin(file)),
+            BlobEncoding::Xz => Self(std::boxed::Box::pin(XzDecoder::new(BufReader::new(file)))),
+        }
+    }
+}
+
+#[cfg(feature = "tokio")]
+impl AsyncRead for BlobFile {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
+        buffer: &mut bitcache_core::tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        self.0.as_mut().poll_read(context, buffer)
+    }
+}
+
 /// A repository backed by a local filesystem directory.
 ///
-/// Blobs are stored as flat files named by their hexadecimal IDs. Access is
-/// capability-scoped to the directory via [`cap_std`]. On Unix, extended
+/// Blobs are stored as flat files named by their hexadecimal IDs, with an
+/// `.xz` suffix when compressed. Access is capability-scoped to the directory
+/// via [`cap_std`]. On Unix, extended
 /// metadata is also accessed through file handles. Windows extended metadata
 /// uses NTFS alternate data streams and therefore retains the canonical
 /// repository path as a platform-specific fallback.
@@ -79,9 +134,21 @@ impl FsRepository {
         Ok(repository)
     }
 
-    /// The storage path for the blob with the given ID.
+    /// The uncompressed storage path for the blob with the given ID.
     fn path(id: &Id) -> String {
         id.to_hex().as_str().into()
+    }
+
+    /// The compressed storage path for the blob with the given ID.
+    fn compressed_path(id: &Id) -> String {
+        std::format!("{}.xz", id.to_hex().as_str())
+    }
+
+    fn path_for(id: &Id, encoding: BlobEncoding) -> String {
+        match encoding {
+            BlobEncoding::Uncompressed => Self::path(id),
+            BlobEncoding::Xz => Self::compressed_path(id),
+        }
     }
 
     #[cfg(not(windows))]
@@ -124,8 +191,12 @@ impl FsRepository {
     }
 
     /// Derives blob metadata from filesystem and extended metadata.
-    fn blob_metadata(metadata: &cap_std::fs::Metadata, extended: ExtendedMetadata) -> BlobMetadata {
-        BlobMetadata::new(metadata.len())
+    fn blob_metadata(
+        metadata: &cap_std::fs::Metadata,
+        extended: ExtendedMetadata,
+        len: u64,
+    ) -> BlobMetadata {
+        BlobMetadata::new(len)
             .with_media_type(extended.media_type.map(Into::into))
             .with_created(metadata.created().ok().map(|time| time.into_std()))
             .with_updated_nanos(Self::updated_nanos(metadata))
@@ -212,29 +283,33 @@ impl FsRepository {
     }
 
     /// Opens a physical blob and reads its extended metadata.
-    fn open_physical(
-        &self,
-        id: &Id,
-    ) -> Result<Option<(String, File, ExtendedMetadata)>, RepositoryError> {
-        let name = Self::path(id);
-        match self.0.open(&name) {
-            Ok(file) => {
-                let metadata = self.read_extended(&name, &file)?;
-                Ok(Some((name, file, metadata)))
-            },
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error.into()),
+    ///
+    /// The uncompressed representation is preferred when both exist.
+    fn open_physical(&self, id: &Id) -> Result<Option<PhysicalBlob>, RepositoryError> {
+        for encoding in [BlobEncoding::Uncompressed, BlobEncoding::Xz] {
+            let name = Self::path_for(id, encoding);
+            match self.0.open(&name) {
+                Ok(file) => {
+                    let extended = self.read_extended(&name, &file)?;
+                    return Ok(Some(PhysicalBlob {
+                        name,
+                        file,
+                        extended,
+                        encoding,
+                    }));
+                },
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.into()),
+            }
         }
+        Ok(None)
     }
 
     /// Opens a blob only if it is logically present (not expired).
-    fn open_live(
-        &self,
-        id: &Id,
-    ) -> Result<Option<(String, File, ExtendedMetadata)>, RepositoryError> {
+    fn open_live(&self, id: &Id) -> Result<Option<PhysicalBlob>, RepositoryError> {
         Ok(self
             .open_physical(id)?
-            .filter(|(_, _, metadata)| !Self::is_expired(metadata)))
+            .filter(|blob| !Self::is_expired(&blob.extended)))
     }
 
     /// Creates a uniquely named temporary file without replacing any file.
@@ -280,8 +355,25 @@ impl FsRepository {
         temp_name: &str,
         id: &Id,
         metadata: &ExtendedMetadata,
+        encoding: BlobEncoding,
     ) -> Result<(), RepositoryError> {
-        let path = Self::path(id);
+        let uncompressed_path = Self::path(id);
+        match self.0.open(&uncompressed_path) {
+            Ok(existing_file) => {
+                let result = self
+                    .write_existing_extended(&uncompressed_path, &existing_file, metadata)
+                    .map(|_| ());
+                let _ = self.0.remove_file(temp_name);
+                return result;
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => {
+                let _ = self.0.remove_file(temp_name);
+                return Err(error.into());
+            },
+        }
+
+        let path = Self::path_for(id, encoding);
         for _ in 0..4 {
             match self.0.hard_link(temp_name, &self.0, &path) {
                 Ok(()) => {
@@ -336,10 +428,13 @@ impl FsRepository {
             let Ok(name) = entry.file_name() else {
                 continue;
             };
-            if let Ok(id) = Id::from_hex(&name) {
+            let name = name.strip_suffix(".xz").unwrap_or(&name);
+            if let Ok(id) = Id::from_hex(name) {
                 ids.push(id);
             }
         }
+        ids.sort_unstable();
+        ids.dedup();
         Ok(ids)
     }
 
@@ -368,13 +463,10 @@ impl FsRepository {
     /// directory, and its contents can be read incrementally without buffering
     /// the whole blob in memory.
     #[cfg(feature = "tokio")]
-    pub async fn get_file(
-        &self,
-        id: &Id,
-    ) -> Result<Option<bitcache_core::tokio::fs::File>, RepositoryError> {
+    pub async fn get_file(&self, id: &Id) -> Result<Option<BlobFile>, RepositoryError> {
         Ok(self
             .open_live(id)?
-            .map(|(_, file, _)| bitcache_core::tokio::fs::File::from_std(file.into_std())))
+            .map(|blob| BlobFile::new(blob.file, blob.encoding)))
     }
 
     /// Stores the file at the given path as a blob, returning its ID.
@@ -397,6 +489,7 @@ impl FsRepository {
         input_path: impl AsRef<std::path::Path>,
         options: PutOptions,
     ) -> Result<Id, RepositoryError> {
+        use async_compression::{Level, tokio::write::XzEncoder};
         use bitcache_core::{
             Hasher,
             tokio::{
@@ -411,7 +504,8 @@ impl FsRepository {
         );
         let mut input_file = File::open(input_path.as_ref()).await?;
         let (temp_name, temp_file) = self.create_temp_file()?;
-        let mut temp_file = File::from_std(temp_file.into_std());
+        let temp_file = File::from_std(temp_file.into_std());
+        let mut encoder = XzEncoder::with_quality(temp_file, Level::Fastest);
 
         let result: Result<Id, RepositoryError> = async {
             let mut hasher = Hasher::new();
@@ -421,16 +515,16 @@ impl FsRepository {
                     0 => break,
                     n => {
                         hasher.update(&buffer[..n]);
-                        temp_file.write_all(&buffer[..n]).await?;
+                        encoder.write_all(&buffer[..n]).await?;
                     },
                 }
             }
-            temp_file.flush().await?;
+            encoder.shutdown().await?;
             Ok(Id(hasher.finalize()))
         }
         .await;
 
-        drop(temp_file);
+        drop(encoder);
         match result {
             Ok(id) => {
                 let temp_file = match self.0.open(&temp_name) {
@@ -446,7 +540,7 @@ impl FsRepository {
                     return Err(error);
                 }
                 drop(temp_file);
-                self.publish_temp(&temp_name, &id, &metadata)?;
+                self.publish_temp(&temp_name, &id, &metadata, BlobEncoding::Xz)?;
                 Ok(id)
             },
             Err(error) => {
@@ -466,20 +560,52 @@ impl FsRepository {
             options.expires_nanos(),
             options.media_type().map(ToString::to_string),
         );
-        let (temp_name, mut temp_file) = self.create_temp_file()?;
-        let result = temp_file.write_all(&data).map_err(RepositoryError::from);
+        let (temp_name, temp_file) = self.create_temp_file()?;
+
+        #[cfg(feature = "tokio")]
+        let (result, encoding) = {
+            use async_compression::{Level, tokio::write::XzEncoder};
+            use bitcache_core::tokio::{fs::File, io::AsyncWriteExt};
+
+            let temp_file = File::from_std(temp_file.into_std());
+            let mut encoder = XzEncoder::with_quality(temp_file, Level::Fastest);
+            let result = async {
+                encoder.write_all(&data).await?;
+                encoder.shutdown().await?;
+                Ok::<(), RepositoryError>(())
+            }
+            .await;
+            drop(encoder);
+            (result, BlobEncoding::Xz)
+        };
+
+        #[cfg(not(feature = "tokio"))]
+        let (result, encoding) = {
+            let mut temp_file = temp_file;
+            (
+                temp_file.write_all(&data).map_err(RepositoryError::from),
+                BlobEncoding::Uncompressed,
+            )
+        };
+
         if result.is_ok() {
+            let temp_file = match self.0.open(&temp_name) {
+                Ok(file) => file,
+                Err(error) => {
+                    let _ = self.0.remove_file(&temp_name);
+                    return Err(error.into());
+                },
+            };
             if let Err(error) = self.prepare_temp(&temp_name, &temp_file, &metadata) {
                 drop(temp_file);
                 let _ = self.0.remove_file(&temp_name);
                 return Err(error);
             }
         }
-        drop(temp_file);
 
         match result {
             Ok(()) => {
-                self.publish_temp(&temp_name, &id, &metadata)?;
+                self.publish_temp(&temp_name, &id, &metadata, encoding)?;
                 Ok(id)
             },
             Err(error) => {
@@ -506,22 +632,77 @@ impl Repository for FsRepository {
     }
 
     async fn get(&self, id: &Id) -> Result<Option<Blob>, Self::Error> {
-        let Some((_, mut file, extended)) = self.open_live(id)? else {
+        let Some(blob) = self.open_live(id)? else {
             return Ok(None);
         };
-        let mut data = Vec::new();
-        file.read_to_end(&mut data)?;
-        let metadata = Self::blob_metadata(&file.metadata()?, extended);
-        Ok(Some(
-            Blob::new_unchecked(id.clone(), data).with_metadata(metadata),
-        ))
+
+        #[cfg(feature = "tokio")]
+        {
+            use bitcache_core::tokio::io::AsyncReadExt;
+
+            let metadata_file = blob.file.try_clone()?;
+            let mut reader = BlobFile::new(blob.file, blob.encoding);
+            let mut data = Vec::new();
+            reader.read_to_end(&mut data).await?;
+            let metadata =
+                Self::blob_metadata(&metadata_file.metadata()?, blob.extended, data.len() as u64);
+            Ok(Some(
+                Blob::new_unchecked(id.clone(), data).with_metadata(metadata),
+            ))
+        }
+
+        #[cfg(not(feature = "tokio"))]
+        {
+            if blob.encoding == BlobEncoding::Xz {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    "XZ blob reads require the tokio feature",
+                )
+                .into());
+            }
+            let mut file = blob.file;
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            let metadata = Self::blob_metadata(&file.metadata()?, blob.extended, data.len() as u64);
+            Ok(Some(
+                Blob::new_unchecked(id.clone(), data).with_metadata(metadata),
+            ))
+        }
     }
 
     async fn get_len(&self, id: &Id) -> Result<Option<u64>, Self::Error> {
-        let Some((_, file, _)) = self.open_live(id)? else {
+        let Some(blob) = self.open_live(id)? else {
             return Ok(None);
         };
-        Ok(Some(file.metadata()?.len()))
+        if blob.encoding == BlobEncoding::Uncompressed {
+            return Ok(Some(blob.file.metadata()?.len()));
+        }
+
+        #[cfg(feature = "tokio")]
+        {
+            use bitcache_core::tokio::io::AsyncReadExt;
+
+            let mut reader = BlobFile::new(blob.file, blob.encoding);
+            let mut buffer = [0u8; BUFFER_LEN];
+            let mut len = 0u64;
+            loop {
+                let read = reader.read(&mut buffer).await?;
+                if read == 0 {
+                    break;
+                }
+                len = len.checked_add(read as u64).ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "blob length overflow")
+                })?;
+            }
+            Ok(Some(len))
+        }
+
+        #[cfg(not(feature = "tokio"))]
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "XZ blob reads require the tokio feature",
+        )
+        .into())
     }
 
     async fn put(&mut self, data: Bytes) -> Result<Id, Self::Error> {
@@ -537,15 +718,20 @@ impl Repository for FsRepository {
     }
 
     async fn remove(&mut self, id: &Id) -> Result<bool, Self::Error> {
-        let Some((name, file, _)) = self.open_live(id)? else {
+        let Some(blob) = self.open_live(id)? else {
             return Ok(false);
         };
-        drop(file);
-        match self.0.remove_file(name) {
-            Ok(()) => Ok(true),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(error.into()),
+        drop(blob.file);
+
+        let mut removed = false;
+        for encoding in [BlobEncoding::Uncompressed, BlobEncoding::Xz] {
+            match self.0.remove_file(Self::path_for(id, encoding)) {
+                Ok(()) => removed = true,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
+            }
         }
+        Ok(removed)
     }
 
     async fn set_expiry(
@@ -553,11 +739,11 @@ impl Repository for FsRepository {
         id: &Id,
         expires_nanos: Option<u64>,
     ) -> Result<bool, Self::Error> {
-        let Some((name, file, mut metadata)) = self.open_live(id)? else {
+        let Some(mut blob) = self.open_live(id)? else {
             return Ok(false);
         };
-        metadata.expires = expires_nanos;
-        self.write_existing_extended(&name, &file, &metadata)
+        blob.extended.expires = expires_nanos;
+        self.write_existing_extended(&blob.name, &blob.file, &blob.extended)
     }
 
     async fn set_media_type(
@@ -565,19 +751,21 @@ impl Repository for FsRepository {
         id: &Id,
         media_type: Option<&str>,
     ) -> Result<bool, Self::Error> {
-        let Some((name, file, mut metadata)) = self.open_live(id)? else {
+        let Some(mut blob) = self.open_live(id)? else {
             return Ok(false);
         };
-        metadata.media_type = media_type.map(ToString::to_string);
-        self.write_existing_extended(&name, &file, &metadata)
+        blob.extended.media_type = media_type.map(ToString::to_string);
+        self.write_existing_extended(&blob.name, &blob.file, &blob.extended)
     }
 
     async fn clear(&mut self) -> Result<(), Self::Error> {
         for id in self.collect_physical_ids()? {
-            match self.0.remove_file(Self::path(&id)) {
-                Ok(()) => (),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                Err(error) => return Err(error.into()),
+            for encoding in [BlobEncoding::Uncompressed, BlobEncoding::Xz] {
+                match self.0.remove_file(Self::path_for(&id, encoding)) {
+                    Ok(()) => (),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                    Err(error) => return Err(error.into()),
+                }
             }
         }
         Ok(())

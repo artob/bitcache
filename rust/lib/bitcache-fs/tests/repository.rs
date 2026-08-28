@@ -13,6 +13,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime},
 };
+use tokio::io::AsyncReadExt;
 
 static NEXT_TEST_DIR: AtomicU64 = AtomicU64::new(0);
 
@@ -42,7 +43,18 @@ impl Drop for TestDir {
 }
 
 fn blob_path(repository_path: &Path, id: &Id) -> PathBuf {
+    repository_path.join(format!("{}.xz", id.to_hex().as_str()))
+}
+
+fn uncompressed_blob_path(repository_path: &Path, id: &Id) -> PathBuf {
     repository_path.join(id.to_hex().as_str())
+}
+
+async fn read_blob_file(repository: &FsRepository, id: &Id) -> Vec<u8> {
+    let mut file = repository.get_file(id).await.unwrap().unwrap();
+    let mut data = Vec::new();
+    file.read_to_end(&mut data).await.unwrap();
+    data
 }
 
 fn nanos_since_epoch(time: SystemTime) -> u64 {
@@ -112,7 +124,7 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
 
     let blob = repository.get(&memory_id).await.unwrap().unwrap();
     let metadata_after_get = fs::metadata(&memory_path).unwrap();
-    assert_eq!(blob.metadata().len(), memory_metadata.len());
+    assert_eq!(blob.metadata().len(), memory_data.len() as u64);
     assert_eq!(
         blob.metadata().created_nanos(),
         metadata_after_get.created().ok().map(nanos_since_epoch)
@@ -142,7 +154,7 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
     assert_same_file_except_ctime(&before_memory_duplicate, &after_memory_duplicate);
     let blob = repository.get(&memory_id).await.unwrap().unwrap();
     assert!(blob.metadata().updated_nanos().unwrap() > before_updated);
-    assert_eq!(fs::read(&memory_path).unwrap(), memory_data);
+    assert_eq!(read_blob_file(&repository, &memory_id).await, memory_data);
 
     // Store a file and verify that the inverse duplicate path has the same
     // no-replacement behavior.
@@ -171,7 +183,7 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
     assert_same_file_except_ctime(&before_file_duplicate, &after_file_duplicate);
     let blob = repository.get(&file_id).await.unwrap().unwrap();
     assert!(blob.metadata().updated_nanos().unwrap() > before_updated);
-    assert_eq!(fs::read(&file_path).unwrap(), file_data);
+    assert_eq!(read_blob_file(&repository, &file_id).await, file_data);
 
     assert!(fs::read_dir(&repository_path).unwrap().all(|entry| {
         !entry
@@ -180,6 +192,61 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
             .to_string_lossy()
             .starts_with(".put-")
     }));
+}
+
+#[tokio::test]
+async fn test_compressed_storage_listing_and_uncompressed_preference() {
+    let temp_dir = TestDir::new();
+    let repository_path = temp_dir.path().join("repository");
+    let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    let data = b"the compressed representation";
+    let id = repository.put(Bytes::from_static(data)).await.unwrap();
+    let compressed_path = blob_path(&repository_path, &id);
+    let uncompressed_path = uncompressed_blob_path(&repository_path, &id);
+
+    assert!(compressed_path.exists());
+    assert!(!uncompressed_path.exists());
+    assert!(
+        fs::read(&compressed_path)
+            .unwrap()
+            .starts_with(&[0xfd, b'7', b'z', b'X', b'Z', 0])
+    );
+    assert_eq!(
+        repository.get_len(&id).await.unwrap(),
+        Some(data.len() as u64)
+    );
+    assert_eq!(read_blob_file(&repository, &id).await, data);
+    assert_eq!(
+        repository
+            .list(ListOptions::default())
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap(),
+        vec![id.clone()]
+    );
+
+    fs::write(&uncompressed_path, b"uncompressed wins").unwrap();
+    assert_eq!(read_blob_file(&repository, &id).await, b"uncompressed wins");
+    assert_eq!(
+        repository
+            .list(ListOptions::default())
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap(),
+        vec![id.clone()]
+    );
+
+    fs::remove_file(&uncompressed_path).unwrap();
+    assert_eq!(read_blob_file(&repository, &id).await, data);
+
+    fs::write(&uncompressed_path, data).unwrap();
+    assert!(repository.remove(&id).await.unwrap());
+    assert!(!uncompressed_path.exists());
+    assert!(!compressed_path.exists());
 }
 
 #[tokio::test]
