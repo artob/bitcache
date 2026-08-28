@@ -560,6 +560,7 @@ version = "0.0.3"
 dependencies = [
  "bitcache-core",
  "cap-std",
+ "tokio",
 ]
 
 [[package]]

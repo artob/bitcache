@@ -34,3 +34,6 @@ tokio = ["std", "bitcache-core/tokio"]
 [dependencies]
 bitcache-core = { workspace = true, features = ["cap-std", "clientele"] }
 cap-std = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

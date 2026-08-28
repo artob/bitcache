@@ -4,15 +4,25 @@ use bitcache_core::{
     Blob, BlobMetadata, Bytes, Id, ListOptions, Repository, RepositoryError, Stream,
     futures_util::stream,
 };
+#[cfg(unix)]
+use cap_std::fs_utf8::PermissionsExt;
 use cap_std::{
     ambient_authority,
-    fs_utf8::{Dir, camino::Utf8Path},
+    fs_utf8::{Dir, File, OpenOptions, camino::Utf8Path},
 };
-use std::{string::String, vec::Vec};
+use std::{
+    io::{Read, Write},
+    string::String,
+    sync::atomic::{AtomicU64, Ordering},
+    vec::Vec,
+};
 
 /// The buffer size used when streaming file contents.
 #[cfg(feature = "tokio")]
 const BUFFER_LEN: usize = 65_536;
+
+/// A process-local sequence used to make temporary filenames unique.
+static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 /// A repository backed by a local filesystem directory.
 ///
@@ -67,6 +77,61 @@ impl FsRepository {
             .with_accessed(metadata.accessed().ok().map(|time| time.into_std()))
     }
 
+    /// Creates a uniquely named temporary file without replacing any file.
+    fn create_temp_file(&self) -> Result<(String, File), RepositoryError> {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+
+        loop {
+            let sequence = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+            let name = std::format!(".put-{}-{}.tmp", std::process::id(), sequence);
+            match self.0.open_with(&name, &options) {
+                Ok(file) => return Ok((name, file)),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+
+    /// Sets the file's permissions to read-only, updating its status-change time.
+    fn make_read_only(file: &File) -> Result<(), RepositoryError> {
+        let mut permissions = file.metadata()?.permissions();
+        #[cfg(unix)]
+        permissions.set_mode(0o444);
+        #[cfg(not(unix))]
+        permissions.set_readonly(true);
+        file.set_permissions(permissions)?;
+        Ok(())
+    }
+
+    /// Publishes a temporary file without ever replacing an existing blob.
+    fn publish_temp(&self, temp_name: &str, id: &Id) -> Result<(), RepositoryError> {
+        let temp_file = self.0.open(temp_name)?;
+        if let Err(error) = Self::make_read_only(&temp_file) {
+            drop(temp_file);
+            let _ = self.0.remove_file(temp_name);
+            return Err(error);
+        }
+        drop(temp_file);
+
+        let path = Self::path(id);
+        match self.0.hard_link(temp_name, &self.0, &path) {
+            Ok(()) => {
+                self.0.remove_file(temp_name)?;
+                Ok(())
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                self.0.remove_file(temp_name)?;
+                let existing_file = self.0.open(path)?;
+                Self::make_read_only(&existing_file)
+            },
+            Err(error) => {
+                let _ = self.0.remove_file(temp_name);
+                Err(error.into())
+            },
+        }
+    }
+
     /// Collects the IDs of the contained blobs, in ascending order.
     ///
     /// Directory iteration order is unspecified, so the IDs are materialized
@@ -119,8 +184,9 @@ impl FsRepository {
     ///
     /// The file's contents are streamed with asynchronous I/O in a single
     /// pass: each chunk is hashed with BLAKE3 while being written to a
-    /// temporary file in the repository, which is then renamed into place
-    /// once the ID is known. The file is never buffered wholly in memory.
+    /// temporary file in the repository. Once the ID is known, a hard link
+    /// publishes the file without replacing any existing blob. The file is
+    /// never buffered wholly in memory.
     #[cfg(feature = "tokio")]
     pub async fn put_file(
         &mut self,
@@ -136,8 +202,8 @@ impl FsRepository {
 
         let mut input_file = File::open(input_path.as_ref()).await?;
 
-        let temp_name = std::format!(".put-{}.tmp", std::process::id());
-        let mut temp_file = File::from_std(self.0.create(&temp_name)?.into_std());
+        let (temp_name, temp_file) = self.create_temp_file()?;
+        let mut temp_file = File::from_std(temp_file.into_std());
 
         let result: Result<Id, RepositoryError> = async {
             let mut hasher = Hasher::new();
@@ -159,20 +225,32 @@ impl FsRepository {
         drop(temp_file);
         match result {
             Ok(id) => {
-                self.0.rename(&temp_name, &self.0, Self::path(&id))?;
+                self.publish_temp(&temp_name, &id)?;
                 Ok(id)
             },
             Err(error) => {
                 let _ = self.0.remove_file(&temp_name);
-                Err(error.into())
+                Err(error)
             },
         }
     }
 
     pub async fn put(&mut self, data: Bytes) -> Result<Id, RepositoryError> {
         let id = Id::of(&data);
-        self.0.write(Self::path(&id), &data)?;
-        Ok(id)
+        let (temp_name, mut temp_file) = self.create_temp_file()?;
+        let result = temp_file.write_all(&data);
+        drop(temp_file);
+
+        match result {
+            Ok(()) => {
+                self.publish_temp(&temp_name, &id)?;
+                Ok(id)
+            },
+            Err(error) => {
+                let _ = self.0.remove_file(temp_name);
+                Err(error.into())
+            },
+        }
     }
 }
 
@@ -184,14 +262,15 @@ impl Repository for FsRepository {
     }
 
     async fn get(&self, id: &Id) -> Result<Option<Blob>, Self::Error> {
-        let path = Self::path(id);
-        match self.0.read(&path) {
-            Ok(data) => {
-                let mut blob = Blob::new_unchecked(id.clone(), data);
-                if let Ok(metadata) = self.0.metadata(&path) {
-                    blob = blob.with_metadata(Self::blob_metadata(&metadata));
-                }
-                Ok(Some(blob))
+        match self.0.open(Self::path(id)) {
+            Ok(mut file) => {
+                let mut data = Vec::new();
+                file.read_to_end(&mut data)?;
+                let metadata = file.metadata()?;
+                Ok(Some(
+                    Blob::new_unchecked(id.clone(), data)
+                        .with_metadata(Self::blob_metadata(&metadata)),
+                ))
             },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error.into()),
