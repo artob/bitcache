@@ -29,9 +29,10 @@ std = ["alloc", "bitcache-core/std", "cap-std/fs_utf8"]
 unstable = []
 
 # Interoperability:
-tokio = ["std", "bitcache-core/tokio"]
+tokio = ["std", "async-compression/tokio", "bitcache-core/tokio"]
 
 [dependencies]
+async-compression = { workspace = true, features = ["xz"] }
 bitcache-core = { workspace = true, features = ["cap-std", "clientele"] }
 cap-std = { workspace = true }
 
