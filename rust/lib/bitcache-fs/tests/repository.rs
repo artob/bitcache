@@ -50,6 +50,17 @@ fn uncompressed_blob_path(repository_path: &Path, id: &Id) -> PathBuf {
     repository_path.join(id.to_hex().as_str())
 }
 
+fn xz_dictionary_size(path: &Path) -> u64 {
+    let data = fs::read(path).unwrap();
+    assert_eq!(&data[..6], b"\xfd7zXZ\0");
+    assert_eq!(data[13], 0); // one filter, no explicit size fields
+    assert_eq!(data[14], 0x21); // LZMA2 filter ID
+    assert_eq!(data[15], 1); // one byte of filter properties
+    let property = data[16];
+    assert!(property < 40);
+    u64::from(2 | (property & 1)) << (u32::from(property / 2) + 11)
+}
+
 async fn read_blob_file(repository: &FsRepository, id: &Id) -> Vec<u8> {
     let mut file = repository.get_file(id).await.unwrap().unwrap();
     let mut data = Vec::new();
@@ -264,24 +275,37 @@ async fn test_compact_compresses_uncompressed_blobs() {
         "user.bitcache.media-type",
         b"text/plain",
     );
+    let accessed = SystemTime::UNIX_EPOCH + Duration::from_secs(1_600_000_000);
+    let modified = SystemTime::UNIX_EPOCH + Duration::from_secs(1_650_000_000);
+    fs::File::open(&uncompressed_path)
+        .unwrap()
+        .set_times(
+            fs::FileTimes::new()
+                .set_accessed(accessed)
+                .set_modified(modified),
+        )
+        .unwrap();
+    let mut permissions = fs::metadata(&uncompressed_path).unwrap().permissions();
+    permissions.set_mode(0o640);
+    fs::set_permissions(&uncompressed_path, permissions).unwrap();
+    let source_metadata = fs::metadata(&uncompressed_path).unwrap();
+    let source_created = source_metadata.created().ok().map(nanos_since_epoch);
+    let source_updated = u64::try_from(ctime_nanos(&source_metadata)).ok();
 
     repository.compact().await.unwrap();
 
     assert!(!uncompressed_path.exists());
     assert!(compressed_path.exists());
     let compacted_metadata = fs::metadata(&compressed_path).unwrap();
-    assert_eq!(compacted_metadata.permissions().mode() & 0o777, 0o444);
+    assert_eq!(compacted_metadata.permissions().mode() & 0o777, 0o640);
+    assert_eq!(compacted_metadata.accessed().unwrap(), accessed);
+    assert_eq!(compacted_metadata.modified().unwrap(), modified);
+    assert_eq!(xz_dictionary_size(&compressed_path), 64 * 1024 * 1024);
     assert_eq!(read_blob_file(&repository, &id).await, data);
-    assert_eq!(
-        repository
-            .get(&id)
-            .await
-            .unwrap()
-            .unwrap()
-            .metadata()
-            .media_type(),
-        Some("text/plain")
-    );
+    let blob = repository.get(&id).await.unwrap().unwrap();
+    assert_eq!(blob.metadata().created_nanos(), source_created);
+    assert_eq!(blob.metadata().updated_nanos(), source_updated);
+    assert_eq!(blob.metadata().media_type(), Some("text/plain"));
     assert!(fs::read_dir(&repository_path).unwrap().all(|entry| {
         !entry
             .unwrap()
@@ -295,6 +319,44 @@ async fn test_compact_compresses_uncompressed_blobs() {
         fs::metadata(&compressed_path).unwrap().ino(),
         compacted_metadata.ino()
     );
+}
+
+#[tokio::test]
+async fn test_compact_recompresses_minimally_compressed_blobs() {
+    let temp_dir = TestDir::new();
+    let repository_path = temp_dir.path().join("repository");
+    let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    let data = b"minimally compressed blob\n".repeat(4_096);
+    let id = repository
+        .put_with_options(
+            Bytes::from(data.clone()),
+            PutOptions::new().with_media_type(Some("text/plain".into())),
+        )
+        .await
+        .unwrap();
+    let compressed_path = blob_path(&repository_path, &id);
+    assert_eq!(xz_dictionary_size(&compressed_path), 256 * 1024);
+    let blob = repository.get(&id).await.unwrap().unwrap();
+    let created = blob.metadata().created_nanos();
+    let updated = blob.metadata().updated_nanos();
+    let before = fs::metadata(&compressed_path).unwrap();
+
+    repository.compact().await.unwrap();
+
+    let after = fs::metadata(&compressed_path).unwrap();
+    assert_ne!(after.ino(), before.ino());
+    assert_eq!(after.permissions().mode(), before.permissions().mode());
+    assert_eq!(after.accessed().unwrap(), before.accessed().unwrap());
+    assert_eq!(after.modified().unwrap(), before.modified().unwrap());
+    assert_eq!(xz_dictionary_size(&compressed_path), 64 * 1024 * 1024);
+    assert_eq!(read_blob_file(&repository, &id).await, data);
+    let blob = repository.get(&id).await.unwrap().unwrap();
+    assert_eq!(blob.metadata().created_nanos(), created);
+    assert_eq!(blob.metadata().updated_nanos(), updated);
+    assert_eq!(blob.metadata().media_type(), Some("text/plain"));
+
+    repository.compact().await.unwrap();
+    assert_eq!(fs::metadata(&compressed_path).unwrap().ino(), after.ino());
 }
 
 #[tokio::test]

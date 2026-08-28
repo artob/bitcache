@@ -28,6 +28,13 @@ use bitcache_core::tokio::io::{AsyncRead, BufReader};
 #[cfg(feature = "tokio")]
 const BUFFER_LEN: usize = 65_536;
 
+/// The LZMA2 dictionary size used by liblzma's fastest (preset 0) mode.
+#[cfg(feature = "tokio")]
+const FASTEST_XZ_DICTIONARY_SIZE: u64 = 256 * 1024;
+
+#[cfg(feature = "tokio")]
+const XZ_MAGIC: &[u8; 6] = b"\xfd7zXZ\0";
+
 /// A process-local sequence used to make temporary filenames unique.
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -182,6 +189,7 @@ impl FsRepository {
         let metadata = ExtendedMetadata {
             expires: Some(1),
             media_type: Some(String::from("application/x-bitcache-capability-probe")),
+            ..ExtendedMetadata::default()
         };
         let path = self.extended_path(&name);
         let supported = file_metadata::write(&file, path.as_deref(), &metadata).unwrap_or(false);
@@ -196,12 +204,27 @@ impl FsRepository {
         extended: ExtendedMetadata,
         len: u64,
     ) -> BlobMetadata {
+        let created = extended.created.or_else(|| {
+            metadata
+                .created()
+                .ok()
+                .and_then(|time| Self::system_time_nanos(time.into_std()))
+        });
+        let updated = extended.updated.or_else(|| Self::updated_nanos(metadata));
         BlobMetadata::new(len)
             .with_media_type(extended.media_type.map(Into::into))
-            .with_created(metadata.created().ok().map(|time| time.into_std()))
-            .with_updated_nanos(Self::updated_nanos(metadata))
+            .with_created_nanos(created)
+            .with_updated_nanos(updated)
             .with_accessed(metadata.accessed().ok().map(|time| time.into_std()))
             .with_expires_nanos(extended.expires)
+    }
+
+    fn system_time_nanos(time: std::time::SystemTime) -> Option<u64> {
+        time.duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .ok()?
+            .as_nanos()
+            .try_into()
+            .ok()
     }
 
     /// Returns the inode status-change time as nanoseconds since the Unix epoch.
@@ -274,6 +297,22 @@ impl FsRepository {
         metadata: &ExtendedMetadata,
     ) -> Result<bool, RepositoryError> {
         Self::mutate_read_only_file(file, || self.write_extended(name, file, metadata))
+    }
+
+    fn write_reinserted_extended(
+        &self,
+        name: &str,
+        file: &File,
+        metadata: &ExtendedMetadata,
+    ) -> Result<bool, RepositoryError> {
+        let existing = self.read_extended(name, file)?;
+        let metadata = ExtendedMetadata {
+            created: existing.created,
+            updated: None,
+            expires: metadata.expires,
+            media_type: metadata.media_type.clone(),
+        };
+        self.write_existing_extended(name, file, &metadata)
     }
 
     fn is_expired(metadata: &ExtendedMetadata) -> bool {
@@ -349,6 +388,34 @@ impl FsRepository {
         Self::make_read_only(file)
     }
 
+    #[cfg(feature = "tokio")]
+    fn prepare_compacted_temp(
+        &self,
+        temp_name: &str,
+        file: &File,
+        extended: &ExtendedMetadata,
+        source: &cap_std::fs::Metadata,
+    ) -> Result<(), RepositoryError> {
+        if !self.write_extended(temp_name, file, extended)? {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "filesystem cannot preserve blob metadata during compaction",
+            )
+            .into());
+        }
+
+        let mut times = std::fs::FileTimes::new();
+        if let Ok(accessed) = source.accessed() {
+            times = times.set_accessed(accessed.into_std());
+        }
+        if let Ok(modified) = source.modified() {
+            times = times.set_modified(modified.into_std());
+        }
+        file.try_clone()?.into_std().set_times(times)?;
+        file.set_permissions(source.permissions())?;
+        Ok(())
+    }
+
     /// Publishes a temporary file without ever replacing an existing blob.
     fn publish_temp(
         &self,
@@ -361,7 +428,7 @@ impl FsRepository {
         match self.0.open(&uncompressed_path) {
             Ok(existing_file) => {
                 let result = self
-                    .write_existing_extended(&uncompressed_path, &existing_file, metadata)
+                    .write_reinserted_extended(&uncompressed_path, &existing_file, metadata)
                     .map(|_| ());
                 let _ = self.0.remove_file(temp_name);
                 return result;
@@ -384,7 +451,7 @@ impl FsRepository {
                     match self.0.open(&path) {
                         Ok(existing_file) => {
                             let result = self
-                                .write_existing_extended(&path, &existing_file, metadata)
+                                .write_reinserted_extended(&path, &existing_file, metadata)
                                 .map(|_| ());
                             let _ = self.0.remove_file(temp_name);
                             return result;
@@ -414,32 +481,189 @@ impl FsRepository {
         ExtendedMetadata {
             expires,
             media_type,
+            ..ExtendedMetadata::default()
         }
     }
 
-    /// Rewrites an uncompressed blob using maximum XZ compression.
+    #[cfg(feature = "tokio")]
+    fn read_xz_vli(data: &[u8], cursor: &mut usize, end: usize) -> std::io::Result<u64> {
+        let mut value = 0u64;
+        for index in 0..9 {
+            let byte = *data.get(*cursor).filter(|_| *cursor < end).ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "truncated XZ block header")
+            })?;
+            *cursor += 1;
+            if index == 8 && byte > 1 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "XZ variable-length integer overflow",
+                ));
+            }
+            value |= u64::from(byte & 0x7f) << (index * 7);
+            if byte & 0x80 == 0 {
+                if index > 0 && byte == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "non-canonical XZ variable-length integer",
+                    ));
+                }
+                return Ok(value);
+            }
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "unterminated XZ variable-length integer",
+        ))
+    }
+
+    /// Reads the LZMA2 dictionary size from the first XZ block header.
+    #[cfg(feature = "tokio")]
+    fn xz_dictionary_size(file: &mut File) -> std::io::Result<Option<u64>> {
+        let mut stream_header = [0u8; 12];
+        file.read_exact(&mut stream_header)?;
+        if &stream_header[..XZ_MAGIC.len()] != XZ_MAGIC {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid XZ stream header",
+            ));
+        }
+
+        let mut header_size = [0u8; 1];
+        file.read_exact(&mut header_size)?;
+        if header_size[0] == 0 {
+            return Ok(None);
+        }
+        let header_len = (usize::from(header_size[0]) + 1) * 4;
+        let mut header = std::vec![0u8; header_len];
+        header[0] = header_size[0];
+        file.read_exact(&mut header[1..])?;
+
+        let end = header_len.checked_sub(4).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid XZ block header size",
+            )
+        })?;
+        let flags = *header.get(1).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "truncated XZ block header")
+        })?;
+        if flags & 0x3c != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid XZ block flags",
+            ));
+        }
+
+        let mut cursor = 2;
+        if flags & 0x40 != 0 {
+            Self::read_xz_vli(&header, &mut cursor, end)?;
+        }
+        if flags & 0x80 != 0 {
+            Self::read_xz_vli(&header, &mut cursor, end)?;
+        }
+
+        let mut dictionary_size = None;
+        for _ in 0..=flags & 0x03 {
+            let filter_id = Self::read_xz_vli(&header, &mut cursor, end)?;
+            let properties_len = usize::try_from(Self::read_xz_vli(&header, &mut cursor, end)?)
+                .map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "XZ filter properties are too large",
+                    )
+                })?;
+            let properties_end = cursor.checked_add(properties_len).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "XZ filter properties overflow",
+                )
+            })?;
+            if properties_end > end {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "truncated XZ filter properties",
+                ));
+            }
+            if filter_id == 0x21 {
+                if properties_len != 1 || header[cursor] > 40 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "invalid LZMA2 dictionary property",
+                    ));
+                }
+                let property = header[cursor];
+                dictionary_size = Some(if property == 40 {
+                    u64::from(u32::MAX)
+                } else {
+                    u64::from(2 | (property & 1)) << (u32::from(property / 2) + 11)
+                });
+            }
+            cursor = properties_end;
+        }
+        if header[cursor..end].iter().any(|byte| *byte != 0) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "invalid XZ block header padding",
+            ));
+        }
+        Ok(dictionary_size)
+    }
+
+    /// Selects a blob that needs maximum XZ recompression.
+    #[cfg(feature = "tokio")]
+    fn compact_source(
+        &self,
+        id: &Id,
+    ) -> Result<Option<(BlobEncoding, cap_std::fs::Metadata)>, RepositoryError> {
+        match self.0.open(Self::path(id)) {
+            Ok(file) => {
+                let metadata = file.metadata()?;
+                return Ok(Some((BlobEncoding::Uncompressed, metadata)));
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+        }
+
+        let mut file = match self.0.open(Self::compressed_path(id)) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let metadata = file.metadata()?;
+        Ok(
+            (Self::xz_dictionary_size(&mut file)? == Some(FASTEST_XZ_DICTIONARY_SIZE))
+                .then_some((BlobEncoding::Xz, metadata)),
+        )
+    }
+
+    /// Rewrites an uncompressed or minimally compressed blob using maximum XZ compression.
     #[cfg(feature = "tokio")]
     async fn compact_blob(&self, id: &Id) -> Result<(), RepositoryError> {
         use async_compression::{Level, tokio::write::XzEncoder};
-        use bitcache_core::tokio::{
-            fs::File,
-            io::{AsyncWriteExt, copy},
-        };
+        use bitcache_core::tokio::{fs::File, io::AsyncWriteExt};
 
-        let source_name = Self::path(id);
-        let source_file = match self.0.open(&source_name) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(error.into()),
+        let Some((source_encoding, source_metadata)) = self.compact_source(id)? else {
+            return Ok(());
         };
-        let extended = self.read_extended(&source_name, &source_file)?;
-        let mut source_file = File::from_std(source_file.into_std());
+        let source_name = Self::path_for(id, source_encoding);
+        let source_file = self.0.open(&source_name)?;
+        let mut extended = self.read_extended(&source_name, &source_file)?;
+        extended.created = extended.created.or_else(|| {
+            source_metadata
+                .created()
+                .ok()
+                .and_then(|time| Self::system_time_nanos(time.into_std()))
+        });
+        extended.updated = extended
+            .updated
+            .or_else(|| Self::updated_nanos(&source_metadata));
+        let mut source_file = BlobFile::new(source_file, source_encoding);
         let (temp_name, temp_file) = self.create_temp_file()?;
         let temp_file = File::from_std(temp_file.into_std());
         let mut encoder = XzEncoder::with_quality(temp_file, Level::Best);
 
         let result: Result<(), RepositoryError> = async {
-            copy(&mut source_file, &mut encoder).await?;
+            bitcache_core::tokio::io::copy(&mut source_file, &mut encoder).await?;
             encoder.shutdown().await?;
             Ok(())
         }
@@ -459,7 +683,9 @@ impl FsRepository {
                 return Err(error.into());
             },
         };
-        if let Err(error) = self.prepare_temp(&temp_name, &temp_file, &extended) {
+        if let Err(error) =
+            self.prepare_compacted_temp(&temp_name, &temp_file, &extended, &source_metadata)
+        {
             drop(temp_file);
             let _ = self.0.remove_file(&temp_name);
             return Err(error);
@@ -467,19 +693,13 @@ impl FsRepository {
         drop(temp_file);
 
         let compressed_name = Self::compressed_path(id);
-        match self.0.remove_file(&compressed_name) {
-            Ok(()) => (),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-            Err(error) => {
-                let _ = self.0.remove_file(&temp_name);
-                return Err(error.into());
-            },
-        }
-        if let Err(error) = self.0.hard_link(&temp_name, &self.0, &compressed_name) {
+        if let Err(error) = self.0.rename(&temp_name, &self.0, &compressed_name) {
             let _ = self.0.remove_file(&temp_name);
             return Err(error.into());
         }
-        self.0.remove_file(&temp_name)?;
+        if source_encoding == BlobEncoding::Xz {
+            return Ok(());
+        }
         match self.0.remove_file(source_name) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -813,6 +1033,7 @@ impl Repository for FsRepository {
             return Ok(false);
         };
         blob.extended.expires = expires_nanos;
+        blob.extended.updated = None;
         self.write_existing_extended(&blob.name, &blob.file, &blob.extended)
     }
 
@@ -825,6 +1046,7 @@ impl Repository for FsRepository {
             return Ok(false);
         };
         blob.extended.media_type = media_type.map(ToString::to_string);
+        blob.extended.updated = None;
         self.write_existing_extended(&blob.name, &blob.file, &blob.extended)
     }
 
