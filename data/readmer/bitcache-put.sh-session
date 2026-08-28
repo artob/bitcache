@@ -33,7 +33,10 @@ Options:
 
           Accepts a plain number of seconds (e.g. "90") or a human-friendly duration (e.g. "90s", "2m30s", "1h", "7d").
 
-          Requires a repository backend that supports blob expiration (e.g., Valkey); exits with an error otherwise.
+          Requires a repository backend that supports blob expiration (e.g., filesystem, Turso, or Valkey); exits with an error otherwise.
+
+      --media-type <TYPE>
+          Store an explicit media type (MIME type) for the blob(s)
 
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)

@@ -1,7 +1,8 @@
 $ bitcache list --help
 List the IDs of the blobs in the repository, in ascending order.
 
-With `--verbose` (repeatable), appends further tab-separated columns to each line: the blob's byte size, media type, creation timestamp, and last-access timestamp.
+With `--verbose` (repeatable), appends further tab-separated columns to each line: the blob's byte size, media type, creation timestamp, last-update timestamp, last-access timestamp, and expiration
+timestamp.
 
 Usage: bitcache list [OPTIONS]
 

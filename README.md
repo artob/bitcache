@@ -362,7 +362,8 @@ Options:
 $ bitcache list --help
 List the IDs of the blobs in the repository, in ascending order.
 
-With `--verbose` (repeatable), appends further tab-separated columns to each line: the blob's byte size, media type, creation timestamp, and last-access timestamp.
+With `--verbose` (repeatable), appends further tab-separated columns to each line: the blob's byte size, media type, creation timestamp, last-update timestamp, last-access timestamp, and expiration
+timestamp.
 
 Usage: bitcache list [OPTIONS]
 
@@ -501,7 +502,10 @@ Options:
 
           Accepts a plain number of seconds (e.g. "90") or a human-friendly duration (e.g. "90s", "2m30s", "1h", "7d").
 
-          Requires a repository backend that supports blob expiration (e.g., Valkey); exits with an error otherwise.
+          Requires a repository backend that supports blob expiration (e.g., filesystem, Turso, or Valkey); exits with an error otherwise.
+
+      --media-type <TYPE>
+          Store an explicit media type (MIME type) for the blob(s)
 
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
@@ -577,6 +581,7 @@ Options:
 | URL Scheme            | Adapter Crate     | `ls`  | `get`  | `put`  | `rm`  | `clear` |
 | --------------------- | ----------------- | ----- | ------ | ------ | ----- | ------- |
 | `file:`               | bitcache-fs       | ✓    | ✓    | ✓    | ✓    | ✓ |
+| `git:`                | bitcache-git      | ✓    | ✓    | ✓    | ✓    | ✓ |
 | `heap:`               | bitcache-heap     | ✓    | ✓    | ✓    | ✓    | ✓ |
 | `opendal+azblob:`     | bitcache-opendal  | ✓    | ✓    | ✓    | ✓    | x |
 | `opendal+fs:`         | bitcache-opendal  | ✓    | ✓    | ✓    | ✓    | ✓ |
@@ -590,6 +595,8 @@ Options:
 | `opendal+s3:`         | bitcache-opendal  | ✓    | ✓    | ✓    | ✓    | ✓ |
 | `opendal+sftp:`       | bitcache-opendal  | ✓    | ✓    | ✓    | ✓    | ? |
 | `opendal+sled:`       | bitcache-opendal  | ✓    | ✓    | ✓    | ✓    | ✓ |
+| `redis:`              | bitcache-valkey   | ✓    | ✓    | ✓    | ✓    | ✓ |
+| `sqlite:`             | bitcache-turso    | ✓    | ✓    | ✓    | ✓    | ✓ |
 | `valkey:`             | bitcache-valkey   | ✓    | ✓    | ✓    | ✓    | ✓ |
 
 #### File System Adapter
@@ -597,6 +604,12 @@ Options:
 ```dotenv
 BITCACHE_URL=file:.bitcache
 BITCACHE_URL=file:/tmp/bitcache
+```
+
+#### Git Adapter
+
+```dotenv
+BITCACHE_URL=git://github.com/asimov-datasets/gutenberg.org.git
 ```
 
 #### Heap (Memory) Adapter
@@ -738,6 +751,18 @@ support for your favorite service!)
 [`s3`]: https://opendal.apache.org/services/s3/
 [`sftp`]: https://opendal.apache.org/services/sftp/
 [`sled`]: https://opendal.apache.org/services/sled/
+
+#### Turso (aka SQLite) Adapter
+
+```dotenv
+BITCACHE_URL=sqlite:/tmp/bitcache.db
+```
+
+#### Valkey (fka Redis) Adapter
+
+```dotenv
+BITCACHE_URL=valkey://localhost:6379
+```
 
 ## 👨‍💻 Development
 
