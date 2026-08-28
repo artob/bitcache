@@ -21,3 +21,8 @@ extern crate std;
 
 mod adapter;
 pub use adapter::*;
+
+#[cfg(feature = "std")]
+mod repository;
+#[cfg(feature = "std")]
+pub use repository::*;

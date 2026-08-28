@@ -30,4 +30,8 @@ unstable = []
 
 [dependencies]
 bitcache-core = { workspace = true, features = [] }
-gix = { workspace = true, features = [] }
+reqwest = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -38,6 +38,7 @@ iroh = { version = "1.0", default-features = false }
 fred = { version = "10.1", default-features = false, features = ["transactions"] }
 gix = { version = "0.85", default-features = false, features = ["sha1"] }
 opendal = { version = "0.58", default-features = false }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "system-proxy"] }
 serde = { version = "1", default-features = false, features = ["derive"] }
 thiserror = { version = "2", default-features = false }
 tokio = { version = "1", default-features = false }

@@ -53,7 +53,7 @@ std = [
 unstable = []
 
 # Features:
-all = ["auto-register", "base58", "fs", "heap"]
+all = ["auto-register", "base58", "fs", "git", "heap"]
 auto-register = ["dep:ctor"]
 base58 = ["bitcache-core/base58"]
 
