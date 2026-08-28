@@ -101,7 +101,7 @@ impl DalRepository {
     fn blob_metadata(metadata: &opendal::Metadata) -> BlobMetadata {
         BlobMetadata::new(metadata.content_length())
             .with_media_type(metadata.content_type().map(|s| s.to_owned().into()))
-            .with_created_nanos(
+            .with_updated_nanos(
                 metadata
                     .last_modified()
                     .map(|time| time.into_inner().as_nanosecond().max(0) as u64),

@@ -23,6 +23,8 @@ mod adapter;
 pub use adapter::*;
 
 #[cfg(feature = "std")]
+mod file_metadata;
+#[cfg(feature = "std")]
 mod repository;
 #[cfg(feature = "std")]
 pub use repository::*;

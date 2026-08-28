@@ -2,7 +2,9 @@
 
 #![cfg(unix)]
 
-use bitcache_core::{Bytes, Id, Repository};
+use bitcache_core::{
+    Bytes, Id, ListOptions, PutOptions, Repository, RepositoryError, futures_util::StreamExt,
+};
 use bitcache_fs::FsRepository;
 use std::{
     fs,
@@ -49,8 +51,30 @@ fn nanos_since_epoch(time: SystemTime) -> u64 {
         .as_nanos() as u64
 }
 
+fn now_nanos() -> u64 {
+    nanos_since_epoch(SystemTime::now())
+}
+
 fn ctime_nanos(metadata: &fs::Metadata) -> i128 {
     i128::from(metadata.ctime()) * 1_000_000_000 + i128::from(metadata.ctime_nsec())
+}
+
+fn xattr_timestamp(path: &Path, name: &str) -> u64 {
+    let value = xattr::get(path, name).unwrap().unwrap();
+    u64::from_be_bytes(value.try_into().unwrap())
+}
+
+fn with_writable_file(path: &Path, operation: impl FnOnce()) {
+    let original = fs::metadata(path).unwrap().permissions();
+    let mut writable = original.clone();
+    writable.set_mode(original.mode() | 0o200);
+    fs::set_permissions(path, writable).unwrap();
+    operation();
+    fs::set_permissions(path, original).unwrap();
+}
+
+fn set_xattr(path: &Path, name: &str, value: &[u8]) {
+    with_writable_file(path, || xattr::set(path, name, value).unwrap());
 }
 
 fn assert_same_file_except_ctime(before: &fs::Metadata, after: &fs::Metadata) {
@@ -85,12 +109,15 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
     assert_eq!(blob.metadata().len(), memory_metadata.len());
     assert_eq!(
         blob.metadata().created_nanos(),
-        Some(nanos_since_epoch(
-            metadata_after_get
-                .created()
-                .or_else(|_| metadata_after_get.modified())
-                .unwrap(),
-        ))
+        metadata_after_get.created().ok().map(nanos_since_epoch)
+    );
+    assert_eq!(
+        blob.metadata().updated_nanos(),
+        u64::try_from(ctime_nanos(&metadata_after_get)).ok()
+    );
+    assert_eq!(
+        xattr::get(&memory_path, "user.bitcache.updated").unwrap(),
+        None
     );
     assert_eq!(
         blob.metadata().accessed_nanos(),
@@ -98,14 +125,17 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
     );
 
     // Re-store the same blob through put_file. Its inode and all file metadata
-    // except ctime must remain unchanged.
+    // except ctime must remain unchanged, while logical updated advances.
     let memory_input = temp_dir.path().join("memory-input");
     fs::write(&memory_input, memory_data).unwrap();
+    let before_updated = blob.metadata().updated_nanos().unwrap();
     let before_memory_duplicate = fs::metadata(&memory_path).unwrap();
     std::thread::sleep(Duration::from_millis(20));
     assert_eq!(repository.put_file(&memory_input).await.unwrap(), memory_id);
     let after_memory_duplicate = fs::metadata(&memory_path).unwrap();
     assert_same_file_except_ctime(&before_memory_duplicate, &after_memory_duplicate);
+    let blob = repository.get(&memory_id).await.unwrap().unwrap();
+    assert!(blob.metadata().updated_nanos().unwrap() > before_updated);
     assert_eq!(fs::read(&memory_path).unwrap(), memory_data);
 
     // Store a file and verify that the inverse duplicate path has the same
@@ -115,6 +145,14 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
     fs::write(&file_input, file_data).unwrap();
     let file_id = repository.put_file(&file_input).await.unwrap();
     let file_path = blob_path(&repository_path, &file_id);
+    let before_updated = repository
+        .get(&file_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .metadata()
+        .updated_nanos()
+        .unwrap();
     let before_file_duplicate = fs::metadata(&file_path).unwrap();
     assert_eq!(before_file_duplicate.permissions().mode() & 0o777, 0o444);
 
@@ -125,6 +163,8 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
     );
     let after_file_duplicate = fs::metadata(&file_path).unwrap();
     assert_same_file_except_ctime(&before_file_duplicate, &after_file_duplicate);
+    let blob = repository.get(&file_id).await.unwrap().unwrap();
+    assert!(blob.metadata().updated_nanos().unwrap() > before_updated);
     assert_eq!(fs::read(&file_path).unwrap(), file_data);
 
     assert!(fs::read_dir(&repository_path).unwrap().all(|entry| {
@@ -134,4 +174,156 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
             .to_string_lossy()
             .starts_with(".put-")
     }));
+}
+
+#[tokio::test]
+async fn test_fs_repository_expiry_and_media_type_round_trip() {
+    let temp_dir = TestDir::new();
+    let repository_path = temp_dir.path().join("repository");
+    let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    let options = PutOptions::new()
+        .with_ttl(Duration::from_secs(60))
+        .with_media_type(Some("text/plain".into()));
+
+    let id = repository
+        .put_with_options(Bytes::from_static(b"metadata"), options)
+        .await
+        .unwrap();
+    let path = blob_path(&repository_path, &id);
+    let blob = repository.get(&id).await.unwrap().unwrap();
+    let original_updated = blob.metadata().updated_nanos().unwrap();
+    assert_eq!(blob.metadata().media_type(), Some("text/plain"));
+    assert!(blob.metadata().expires_nanos().unwrap() > now_nanos());
+    assert_eq!(
+        xattr_timestamp(&path, "user.bitcache.expires"),
+        blob.metadata().expires_nanos().unwrap()
+    );
+    assert_eq!(
+        xattr::get(&path, "user.bitcache.media-type")
+            .unwrap()
+            .unwrap(),
+        b"text/plain"
+    );
+
+    std::thread::sleep(Duration::from_millis(20));
+    assert!(
+        repository
+            .set_media_type(&id, Some("text/markdown"))
+            .await
+            .unwrap()
+    );
+    assert!(repository.set_expiry(&id, None).await.unwrap());
+    let blob = repository.get(&id).await.unwrap().unwrap();
+    assert_eq!(blob.metadata().media_type(), Some("text/markdown"));
+    assert_eq!(blob.metadata().expires_nanos(), None);
+    assert!(blob.metadata().updated_nanos().unwrap() > original_updated);
+    assert_eq!(xattr::get(&path, "user.bitcache.expires").unwrap(), None);
+
+    assert!(repository.set_media_type(&id, None).await.unwrap());
+    assert_eq!(
+        repository
+            .get(&id)
+            .await
+            .unwrap()
+            .unwrap()
+            .metadata()
+            .media_type(),
+        None
+    );
+    assert_eq!(xattr::get(&path, "user.bitcache.media-type").unwrap(), None);
+    assert_eq!(xattr::get(&path, "user.bitcache.updated").unwrap(), None);
+}
+
+#[tokio::test]
+async fn test_expired_blobs_are_absent_but_clear_removes_them() {
+    let temp_dir = TestDir::new();
+    let repository_path = temp_dir.path().join("repository");
+    let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    let id = repository
+        .put(Bytes::from_static(b"expired"))
+        .await
+        .unwrap();
+    let path = blob_path(&repository_path, &id);
+
+    assert!(repository.set_expiry(&id, Some(0)).await.unwrap());
+    assert!(!repository.contains(&id).await.unwrap());
+    assert!(repository.get(&id).await.unwrap().is_none());
+    assert!(repository.get_file(&id).await.unwrap().is_none());
+    assert!(repository.get_len(&id).await.unwrap().is_none());
+    assert!(repository.is_empty().await.unwrap());
+    assert_eq!(repository.len().await.unwrap(), 0);
+    assert!(
+        repository
+            .list(ListOptions::default())
+            .collect::<Vec<_>>()
+            .await
+            .is_empty()
+    );
+    assert!(!repository.remove(&id).await.unwrap());
+    assert!(
+        !repository
+            .set_media_type(&id, Some("text/plain"))
+            .await
+            .unwrap()
+    );
+    assert!(path.exists());
+
+    repository.clear().await.unwrap();
+    assert!(!path.exists());
+}
+
+#[tokio::test]
+async fn test_reinsertion_revives_expired_blob_without_replacing_it() {
+    let temp_dir = TestDir::new();
+    let repository_path = temp_dir.path().join("repository");
+    let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    let data = Bytes::from_static(b"revive me");
+    let id = repository.put(data.clone()).await.unwrap();
+    let path = blob_path(&repository_path, &id);
+    let before = fs::metadata(&path).unwrap();
+    let before_updated = repository
+        .get(&id)
+        .await
+        .unwrap()
+        .unwrap()
+        .metadata()
+        .updated_nanos()
+        .unwrap();
+    assert!(repository.set_expiry(&id, Some(0)).await.unwrap());
+
+    std::thread::sleep(Duration::from_millis(20));
+    assert_eq!(repository.put(data).await.unwrap(), id);
+    let after = fs::metadata(&path).unwrap();
+    let blob = repository.get(&id).await.unwrap().unwrap();
+    assert_eq!(after.dev(), before.dev());
+    assert_eq!(after.ino(), before.ino());
+    assert_eq!(blob.metadata().expires_nanos(), None);
+    assert!(blob.metadata().updated_nanos().unwrap() > before_updated);
+}
+
+#[tokio::test]
+async fn test_malformed_extended_metadata_is_rejected() {
+    let temp_dir = TestDir::new();
+    let repository_path = temp_dir.path().join("repository");
+    let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    let id = repository
+        .put(Bytes::from_static(b"malformed"))
+        .await
+        .unwrap();
+    let path = blob_path(&repository_path, &id);
+
+    set_xattr(&path, "user.bitcache.expires", b"bad");
+    let error = repository.get(&id).await.unwrap_err();
+    assert!(matches!(
+        error,
+        RepositoryError::Io(ref error) if error.kind() == std::io::ErrorKind::InvalidData
+    ));
+
+    set_xattr(&path, "user.bitcache.expires", &[]);
+    set_xattr(&path, "user.bitcache.media-type", &[0xff]);
+    let error = repository.get(&id).await.unwrap_err();
+    assert!(matches!(
+        error,
+        RepositoryError::Io(ref error) if error.kind() == std::io::ErrorKind::InvalidData
+    ));
 }

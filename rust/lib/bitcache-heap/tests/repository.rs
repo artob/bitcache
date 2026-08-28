@@ -27,6 +27,16 @@ fn test_heap_repository() {
         let blob = repository.get(&id).await.unwrap().unwrap();
         assert_eq!(blob.id(), &id);
         assert_eq!(blob.len(), data.len() as u64);
+        let created = blob.metadata().created_nanos().unwrap();
+        let updated = blob.metadata().updated_nanos().unwrap();
+        assert_eq!(updated, created);
+        assert_eq!(blob.metadata().accessed_nanos(), None);
+
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        repository.put(Bytes::from_static(data)).await.unwrap();
+        let reinserted = repository.get(&id).await.unwrap().unwrap();
+        assert_eq!(reinserted.metadata().created_nanos(), Some(created));
+        assert!(reinserted.metadata().updated_nanos().unwrap() > updated);
 
         let mut contents = Vec::new();
         let mut reader = blob.read();

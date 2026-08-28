@@ -28,6 +28,8 @@ async fn test_dal_repository() {
     let blob = repository.get(&id).await.unwrap().unwrap();
     assert_eq!(blob.id(), &id);
     assert_eq!(blob.len(), data.len() as u64);
+    assert_eq!(blob.metadata().created_nanos(), None);
+    assert_eq!(blob.metadata().updated_nanos(), None);
 
     let mut contents = Vec::new();
     let mut reader = blob.read();

@@ -67,15 +67,14 @@ pub trait Repository: Send + Sync {
     /// Stores the given data as a blob, with options, returning its
     /// content-derived ID.
     ///
-    /// When [`PutOptions::ttl`] is set, repositories that support blob
-    /// expiration arrange for the blob to expire that long after it is
-    /// stored — where possible atomically, as part of the store itself.
+    /// When [`PutOptions::ttl`] or [`PutOptions::media_type`] is set,
+    /// repositories that support the corresponding metadata arrange to store
+    /// it — where possible atomically, as part of the store itself.
     ///
     /// The default implementation stores the blob with [`Repository::put`]
-    /// and then applies any TTL with [`Repository::set_expiry`], on a
-    /// best-effort basis: repositories that don't support blob expiration
-    /// store the blob persistently. Use [`Repository::set_expiry`] directly
-    /// to detect whether expiration is supported.
+    /// and then applies the requested metadata on a best-effort basis.
+    /// Unsupported metadata is ignored; use [`Repository::set_expiry`] or
+    /// [`Repository::set_media_type`] directly to detect support.
     fn put_with_options(
         &mut self,
         data: Bytes,
@@ -85,6 +84,10 @@ pub trait Repository: Send + Sync {
             let id = self.put(data).await?;
             if let Some(expires_nanos) = options.expires_nanos() {
                 self.set_expiry(&id, Some(expires_nanos)).await?;
+            }
+            #[cfg(feature = "alloc")]
+            if let Some(media_type) = options.media_type() {
+                self.set_media_type(&id, Some(media_type)).await?;
             }
             Ok(id)
         }
@@ -125,6 +128,21 @@ pub trait Repository: Send + Sync {
         expires_nanos: Option<u64>,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
         let _ = (id, expires_nanos);
+        async { Ok(false) }
+    }
+
+    /// Sets or clears the explicit media type (MIME type) of the blob with the
+    /// given ID.
+    ///
+    /// Passing `None` clears the media type. Returns `true` if the blob's media
+    /// type was updated, or `false` if no blob with the given ID was present or
+    /// if the repository does not support media-type metadata (the default).
+    fn set_media_type(
+        &mut self,
+        id: &Id,
+        media_type: Option<&str>,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
+        let _ = (id, media_type);
         async { Ok(false) }
     }
 

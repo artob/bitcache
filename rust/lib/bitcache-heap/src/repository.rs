@@ -1,6 +1,6 @@
 // This is free and unencumbered software released into the public domain.
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, btree_map::Entry};
 use bitcache_core::{
     Blob, BlobMetadata, BoxError, Bytes, Id, ListOptions, Repository, RepositoryError, Stream,
     futures_util::stream,
@@ -54,8 +54,19 @@ impl Repository for HeapRepository {
 
     async fn put(&mut self, data: Bytes) -> Result<Id, Self::Error> {
         let id = Id::of(&data);
-        let metadata = BlobMetadata::new(data.len() as u64).with_created_nanos(now());
-        self.0.insert(id.clone(), HeapEntry { data, metadata });
+        let timestamp = now();
+        match self.0.entry(id.clone()) {
+            Entry::Vacant(entry) => {
+                let metadata = BlobMetadata::new(data.len() as u64)
+                    .with_created_nanos(timestamp)
+                    .with_updated_nanos(timestamp);
+                entry.insert(HeapEntry { data, metadata });
+            },
+            Entry::Occupied(mut entry) => {
+                let metadata = entry.get().metadata.clone().with_updated_nanos(timestamp);
+                entry.get_mut().metadata = metadata;
+            },
+        }
         Ok(id)
     }
 

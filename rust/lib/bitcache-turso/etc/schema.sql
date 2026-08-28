@@ -30,10 +30,10 @@ CREATE TABLE IF NOT EXISTS "bitcache_data" (
 
 CREATE TABLE IF NOT EXISTS "bitcache_meta" (
     "id" integer NOT NULL REFERENCES "bitcache_blob"("id"),
-    "created" integer NOT NULL,   -- nanoseconds since the epoch
-    "updated" integer NOT NULL,   -- nanoseconds since the epoch
-    "accessed" integer NOT NULL,  -- nanoseconds since the epoch
-    "expires" integer NULL,       -- NULL denotes no expiry
+    "created" integer NOT NULL,   -- milliseconds since the epoch
+    "updated" integer NOT NULL,   -- milliseconds since the epoch
+    "accessed" integer NULL,      -- milliseconds since the epoch; NULL until first retrieval
+    "expires" integer NULL,       -- milliseconds since the epoch; NULL denotes no expiry
     "media_type" text NULL,       -- NULL denotes "application/octet-stream"
     PRIMARY KEY ("id")
 ); -- WITHOUT ROWID;

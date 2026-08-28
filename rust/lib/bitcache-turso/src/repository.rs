@@ -117,7 +117,12 @@ impl TursoRepository {
         Ok(())
     }
 
-    async fn store(&mut self, data: Bytes, ttl: Option<Duration>) -> Result<Id, RepositoryError> {
+    async fn store(
+        &mut self,
+        data: Bytes,
+        ttl: Option<Duration>,
+        media_type: Option<Cow<'static, str>>,
+    ) -> Result<Id, RepositoryError> {
         let id = Id::of(&data);
         let now = now_millis();
         let expires = ttl.or(self.ttl).map(|ttl| millis_after(now, ttl));
@@ -159,14 +164,14 @@ impl TursoRepository {
         transaction
             .execute(
                 "INSERT INTO bitcache_meta (id, created, updated, accessed, expires, media_type) \
-                 VALUES (?1, ?2, ?2, ?2, ?3, NULL) \
+                 VALUES (?1, ?2, ?2, NULL, ?3, ?4) \
                  ON CONFLICT (id) DO UPDATE SET updated = excluded.updated, \
-                 accessed = excluded.accessed, expires = excluded.expires, \
-                 media_type = excluded.media_type",
+                 expires = excluded.expires, media_type = excluded.media_type",
                 vec![
                     Value::Integer(database_id),
                     Value::Integer(now),
                     expires.map_or(Value::Null, Value::Integer),
+                    media_type.map_or(Value::Null, |value| Value::Text(value.into_owned())),
                 ],
             )
             .await
@@ -257,7 +262,7 @@ impl Repository for TursoRepository {
         let now = now_millis();
         let mut rows = connection
             .query(
-                "SELECT b.id, d.encoding, d.data, m.created, m.accessed, m.expires, m.media_type \
+                "SELECT b.id, d.encoding, d.data, m.created, m.updated, m.expires, m.media_type \
                  FROM bitcache_blob AS b \
                  JOIN bitcache_data AS d ON d.id = b.id \
                  JOIN bitcache_meta AS m ON m.id = b.id \
@@ -276,6 +281,7 @@ impl Repository for TursoRepository {
         }
         let data = blob(&row, 2)?;
         let created = optional_u64(&row, 3)?;
+        let updated = optional_u64(&row, 4)?;
         let expires = optional_u64(&row, 5)?;
         let media_type = optional_text(&row, 6)?;
         drop(rows);
@@ -290,9 +296,10 @@ impl Repository for TursoRepository {
 
         let metadata = BlobMetadata::new(data.len() as u64)
             .with_media_type(media_type.map(Cow::Owned))
-            .with_created_nanos(created.map(|t| t * 1000))
-            .with_accessed_nanos(u64::try_from(now).ok().map(|t| t * 1000))
-            .with_expires_nanos(expires.map(|t| t * 1000));
+            .with_created_nanos(created.and_then(millis_to_nanos))
+            .with_updated_nanos(updated.and_then(millis_to_nanos))
+            .with_accessed_nanos(u64::try_from(now).ok().and_then(millis_to_nanos))
+            .with_expires_nanos(expires.and_then(millis_to_nanos));
         Ok(Some(
             Blob::new_unchecked(id.clone(), Bytes::from(data)).with_metadata(metadata),
         ))
@@ -300,27 +307,36 @@ impl Repository for TursoRepository {
 
     async fn get_len(&self, id: &Id) -> Result<Option<u64>, Self::Error> {
         let connection = self.connect()?;
+        let now = now_millis();
         let mut rows = connection
             .query(
-                "SELECT length(d.data) FROM bitcache_blob AS b \
+                "SELECT b.id, length(d.data) FROM bitcache_blob AS b \
                  JOIN bitcache_data AS d ON d.id = b.id \
                  JOIN bitcache_meta AS m ON m.id = b.id \
                  WHERE b.blake3 = ?1 AND (m.expires IS NULL OR m.expires > ?2)",
-                vec![
-                    Value::Blob(id.as_slice().to_vec()),
-                    Value::Integer(now_millis()),
-                ],
+                vec![Value::Blob(id.as_slice().to_vec()), Value::Integer(now)],
             )
             .await
             .map_err(repository_error)?;
         let Some(row) = rows.next().await.map_err(repository_error)? else {
             return Ok(None);
         };
-        Ok(Some(u64::try_from(integer(&row, 0)?).map_err(other_error)?))
+        let database_id = integer(&row, 0)?;
+        let len = u64::try_from(integer(&row, 1)?).map_err(other_error)?;
+        drop(rows);
+
+        connection
+            .execute(
+                "UPDATE bitcache_meta SET accessed = ?1 WHERE id = ?2",
+                [now, database_id],
+            )
+            .await
+            .map_err(repository_error)?;
+        Ok(Some(len))
     }
 
     async fn put(&mut self, data: Bytes) -> Result<Id, Self::Error> {
-        self.store(data, None).await
+        self.store(data, None, None).await
     }
 
     async fn put_with_options(
@@ -328,7 +344,7 @@ impl Repository for TursoRepository {
         data: Bytes,
         options: PutOptions,
     ) -> Result<Id, Self::Error> {
-        self.store(data, options.ttl).await
+        self.store(data, options.ttl, options.media_type).await
     }
 
     async fn put_with_ttl(
@@ -336,7 +352,7 @@ impl Repository for TursoRepository {
         data: Bytes,
         ttl: Option<Duration>,
     ) -> Result<Id, Self::Error> {
-        self.store(data, ttl).await
+        self.store(data, ttl, None).await
     }
 
     async fn remove(&mut self, id: &Id) -> Result<bool, Self::Error> {
@@ -385,18 +401,40 @@ impl Repository for TursoRepository {
         let connection = self.connect()?;
         let now = now_millis();
         let expires = match expires_nanos {
-            Some(value) => Value::Integer(i64::try_from(value / 1000).unwrap()),
+            Some(value) => Value::Integer(i64::try_from(value / 1_000_000).unwrap()),
             None => Value::Null,
         };
         let changed = connection
             .execute(
-                "UPDATE bitcache_meta SET expires = ?1, updated = ?2 \
-                 WHERE id = (SELECT id FROM bitcache_blob WHERE blake3 = ?3) \
-                 AND (expires IS NULL OR expires > ?2)",
+                "UPDATE bitcache_meta SET expires = ?1 \
+                 WHERE id = (SELECT id FROM bitcache_blob WHERE blake3 = ?2) \
+                 AND (expires IS NULL OR expires > ?3)",
                 vec![
                     expires,
-                    Value::Integer(now),
                     Value::Blob(id.as_slice().to_vec()),
+                    Value::Integer(now),
+                ],
+            )
+            .await
+            .map_err(repository_error)?;
+        Ok(changed > 0)
+    }
+
+    async fn set_media_type(
+        &mut self,
+        id: &Id,
+        media_type: Option<&str>,
+    ) -> Result<bool, Self::Error> {
+        let connection = self.connect()?;
+        let changed = connection
+            .execute(
+                "UPDATE bitcache_meta SET media_type = ?1 \
+                 WHERE id = (SELECT id FROM bitcache_blob WHERE blake3 = ?2) \
+                 AND (expires IS NULL OR expires > ?3)",
+                vec![
+                    media_type.map_or(Value::Null, |value| Value::Text(value.into())),
+                    Value::Blob(id.as_slice().to_vec()),
+                    Value::Integer(now_millis()),
                 ],
             )
             .await
@@ -504,6 +542,10 @@ fn now_millis() -> i64 {
 fn millis_after(now: i64, ttl: Duration) -> i64 {
     let ttl = ttl.as_millis().min(i64::MAX as u128) as i64;
     now.saturating_add(ttl)
+}
+
+fn millis_to_nanos(millis: u64) -> Option<u64> {
+    millis.checked_mul(1_000_000)
 }
 
 fn integer(row: &Row, index: usize) -> Result<i64, RepositoryError> {

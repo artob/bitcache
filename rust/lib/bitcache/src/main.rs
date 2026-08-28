@@ -50,7 +50,7 @@ enum Command {
     ///
     /// With `--verbose` (repeatable), appends further tab-separated columns
     /// to each line: the blob's byte size, media type, creation timestamp,
-    /// and last-access timestamp.
+    /// last-update timestamp, last-access timestamp, and expiration timestamp.
     #[clap(alias = "ls")]
     List {
         /// The format to use for the hash output.
@@ -110,9 +110,13 @@ enum Command {
         /// human-friendly duration (e.g. "90s", "2m30s", "1h", "7d").
         ///
         /// Requires a repository backend that supports blob expiration
-        /// (e.g., Valkey); exits with an error otherwise.
+        /// (e.g., filesystem, Turso, or Valkey); exits with an error otherwise.
         #[arg(long, value_name = "DURATION", value_parser = parse_ttl)]
         ttl: Option<std::time::Duration>,
+
+        /// Store an explicit media type (MIME type) for the blob(s).
+        #[arg(long, value_name = "TYPE")]
+        media_type: Option<String>,
 
         /// The paths to the file(s) to store.
         #[arg(value_name = "FILES")]
@@ -363,6 +367,10 @@ pub async fn main() -> Result<(), SysexitsError> {
                     .created_secs()
                     .map(|n| n.to_string())
                     .unwrap_or_default();
+                let updated = metadata
+                    .updated_secs()
+                    .map(|n| n.to_string())
+                    .unwrap_or_default();
                 let accessed = metadata
                     .accessed_secs()
                     .map(|n| n.to_string())
@@ -376,10 +384,14 @@ pub async fn main() -> Result<(), SysexitsError> {
                     1 => println!("\t{}", len),
                     2 => println!("\t{}\t{}", len, media_type),
                     3 => println!("\t{}\t{}\t{}", len, media_type, created),
-                    4 => println!("\t{}\t{}\t{}\t{}", len, media_type, created, accessed),
-                    5 | _ => println!(
+                    4 => println!("\t{}\t{}\t{}\t{}", len, media_type, created, updated),
+                    5 => println!(
                         "\t{}\t{}\t{}\t{}\t{}",
-                        len, media_type, created, accessed, expires
+                        len, media_type, created, updated, accessed
+                    ),
+                    6 | _ => println!(
+                        "\t{}\t{}\t{}\t{}\t{}\t{}",
+                        len, media_type, created, updated, accessed, expires
                     ),
                 }
             }
@@ -416,13 +428,20 @@ pub async fn main() -> Result<(), SysexitsError> {
             Ok(())
         },
 
-        Command::Put { format, ttl, paths } => {
-            let options = PutOptions::new().with_ttl(ttl);
+        Command::Put {
+            format,
+            ttl,
+            media_type,
+            paths,
+        } => {
+            let options = PutOptions::new()
+                .with_ttl(ttl)
+                .with_media_type(media_type.map(std::borrow::Cow::Owned));
             let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for path in paths {
                 let buffer = tokio::fs::read(&path).await?;
                 let bytes = Bytes::from(buffer);
-                let id = repository.put_with_ttl(bytes, ttl).await?;
+                let id = repository.put_with_options(bytes, options.clone()).await?;
                 // The TTL (if any) was already applied by the store above,
                 // atomically where supported; this re-set of the same
                 // expiration merely verifies that the repository supports
@@ -430,6 +449,12 @@ pub async fn main() -> Result<(), SysexitsError> {
                 if let Some(expires_nanos) = options.expires_nanos() {
                     if !repository.set_expiry(&id, Some(expires_nanos)).await? {
                         eprintln!("bitcache: repository does not support blob expiration");
+                        return Err(SysexitsError::EX_UNAVAILABLE);
+                    }
+                }
+                if let Some(media_type) = options.media_type() {
+                    if !repository.set_media_type(&id, Some(media_type)).await? {
+                        eprintln!("bitcache: repository does not support media-type metadata");
                         return Err(SysexitsError::EX_UNAVAILABLE);
                     }
                 }
@@ -481,11 +506,8 @@ pub async fn main() -> Result<(), SysexitsError> {
                 header.set_path(id.to_hex().to_string())?;
                 header.set_size(blob.len());
                 header.set_mode(0o444);
-                if let Some(modified) = blob.metadata().created_secs() {
-                    header.set_mtime(modified);
-                }
                 if let Some(header) = header.as_gnu_mut() {
-                    if let Some(changed) = blob.metadata().created_secs() {
+                    if let Some(changed) = blob.metadata().updated_secs() {
                         header.set_ctime(changed);
                     }
                     if let Some(accessed) = blob.metadata().accessed_secs() {

@@ -35,5 +35,11 @@ tokio = ["std", "bitcache-core/tokio"]
 bitcache-core = { workspace = true, features = ["cap-std", "clientele"] }
 cap-std = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+xattr = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+fsquirrel = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
