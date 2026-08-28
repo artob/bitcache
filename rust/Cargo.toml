@@ -1,7 +1,7 @@
 # See: https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace.package]
-version = "0.0.3"
+version = "0.0.4"
 authors = ["Arto Bendiken"]
 edition = "2024"
 rust-version = "1.91"
@@ -20,15 +20,15 @@ members = ["lib/*"]
 resolver = "2"
 
 [workspace.dependencies]
-bitcache = { version = "=0.0.3", default-features = false }
-bitcache-core = { version = "=0.0.3", default-features = false }
-bitcache-fs = { version = "=0.0.3", default-features = false }
-bitcache-git = { version = "=0.0.3", default-features = false }
-bitcache-heap = { version = "=0.0.3", default-features = false }
-bitcache-iroh = { version = "=0.0.3", default-features = false }
-bitcache-opendal = { version = "=0.0.3", default-features = false }
-bitcache-turso = { version = "=0.0.3", default-features = false }
-bitcache-valkey = { version = "=0.0.3", default-features = false }
+bitcache = { version = "=0.0.4", default-features = false }
+bitcache-core = { version = "=0.0.4", default-features = false }
+bitcache-fs = { version = "=0.0.4", default-features = false }
+bitcache-git = { version = "=0.0.4", default-features = false }
+bitcache-heap = { version = "=0.0.4", default-features = false }
+bitcache-iroh = { version = "=0.0.4", default-features = false }
+bitcache-opendal = { version = "=0.0.4", default-features = false }
+bitcache-turso = { version = "=0.0.4", default-features = false }
+bitcache-valkey = { version = "=0.0.4", default-features = false }
 
 astral-tokio-tar = { version = "0.6", default-features = false }
 async-compression = { version = "0.4", default-features = false }

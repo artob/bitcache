@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "astral-tokio-tar",
  "bitcache-core",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-core"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "arrayvec",
  "blake3",
@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-fs"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "async-compression",
  "bitcache-core",
@@ -580,7 +580,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-git"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "bitcache-core",
  "reqwest",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-heap"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "bitcache-core",
  "futures",
@@ -598,7 +598,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-iroh"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "bitcache-core",
  "iroh",
@@ -606,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-opendal"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "bitcache-core",
  "opendal",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-turso"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "bitcache-core",
  "tokio",
@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "bitcache-valkey"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "bitcache-core",
  "fred",
