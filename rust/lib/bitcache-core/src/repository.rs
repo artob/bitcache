@@ -160,6 +160,15 @@ pub trait Repository: Send + Sync {
         async { Ok(false) }
     }
 
+    /// Performs backend-specific repository maintenance.
+    ///
+    /// The default implementation is a no-op. Backends may override this to
+    /// compact or otherwise optimize their physical storage without changing
+    /// the repository's logical contents.
+    fn compact(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        async { Ok(()) }
+    }
+
     /// Removes all blobs, resetting the repository to an empty state.
     fn clear(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send;
 

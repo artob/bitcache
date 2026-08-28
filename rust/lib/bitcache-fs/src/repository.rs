@@ -417,6 +417,76 @@ impl FsRepository {
         }
     }
 
+    /// Rewrites an uncompressed blob using maximum XZ compression.
+    #[cfg(feature = "tokio")]
+    async fn compact_blob(&self, id: &Id) -> Result<(), RepositoryError> {
+        use async_compression::{Level, tokio::write::XzEncoder};
+        use bitcache_core::tokio::{
+            fs::File,
+            io::{AsyncWriteExt, copy},
+        };
+
+        let source_name = Self::path(id);
+        let source_file = match self.0.open(&source_name) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        let extended = self.read_extended(&source_name, &source_file)?;
+        let mut source_file = File::from_std(source_file.into_std());
+        let (temp_name, temp_file) = self.create_temp_file()?;
+        let temp_file = File::from_std(temp_file.into_std());
+        let mut encoder = XzEncoder::with_quality(temp_file, Level::Best);
+
+        let result: Result<(), RepositoryError> = async {
+            copy(&mut source_file, &mut encoder).await?;
+            encoder.shutdown().await?;
+            Ok(())
+        }
+        .await;
+        drop(encoder);
+        drop(source_file);
+
+        if let Err(error) = result {
+            let _ = self.0.remove_file(&temp_name);
+            return Err(error);
+        }
+
+        let temp_file = match self.0.open(&temp_name) {
+            Ok(file) => file,
+            Err(error) => {
+                let _ = self.0.remove_file(&temp_name);
+                return Err(error.into());
+            },
+        };
+        if let Err(error) = self.prepare_temp(&temp_name, &temp_file, &extended) {
+            drop(temp_file);
+            let _ = self.0.remove_file(&temp_name);
+            return Err(error);
+        }
+        drop(temp_file);
+
+        let compressed_name = Self::compressed_path(id);
+        match self.0.remove_file(&compressed_name) {
+            Ok(()) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => {
+                let _ = self.0.remove_file(&temp_name);
+                return Err(error.into());
+            },
+        }
+        if let Err(error) = self.0.hard_link(&temp_name, &self.0, &compressed_name) {
+            let _ = self.0.remove_file(&temp_name);
+            return Err(error.into());
+        }
+        self.0.remove_file(&temp_name)?;
+        match self.0.remove_file(source_name) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     /// Collects all physical blob IDs, including expired blobs.
     fn collect_physical_ids(&self) -> Result<Vec<Id>, RepositoryError> {
         let mut ids = Vec::new();
@@ -756,6 +826,19 @@ impl Repository for FsRepository {
         };
         blob.extended.media_type = media_type.map(ToString::to_string);
         self.write_existing_extended(&blob.name, &blob.file, &blob.extended)
+    }
+
+    async fn compact(&mut self) -> Result<(), Self::Error> {
+        #[cfg(feature = "tokio")]
+        {
+            for id in self.collect_physical_ids()? {
+                self.compact_blob(&id).await?;
+            }
+            Ok(())
+        }
+
+        #[cfg(not(feature = "tokio"))]
+        Ok(())
     }
 
     async fn clear(&mut self) -> Result<(), Self::Error> {

@@ -134,6 +134,12 @@ enum Command {
         ids: Vec<Id>,
     },
 
+    /// Compact the repository's physical storage.
+    ///
+    /// Filesystem repositories rewrite uncompressed blobs using maximum XZ
+    /// compression. Other repository backends may perform no maintenance.
+    Compact {},
+
     /// Remove all blobs from the repository.
     ///
     /// As a safety measure, this requires the `--force` flag; without it,
@@ -471,6 +477,12 @@ pub async fn main() -> Result<(), SysexitsError> {
                     )));
                 }
             }
+            Ok(())
+        },
+
+        Command::Compact {} => {
+            let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
+            repository.compact().await?;
             Ok(())
         },
 

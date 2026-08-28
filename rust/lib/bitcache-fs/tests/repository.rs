@@ -250,6 +250,54 @@ async fn test_compressed_storage_listing_and_uncompressed_preference() {
 }
 
 #[tokio::test]
+async fn test_compact_compresses_uncompressed_blobs() {
+    let temp_dir = TestDir::new();
+    let repository_path = temp_dir.path().join("repository");
+    let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    let data = b"legacy uncompressed blob\n".repeat(1_024);
+    let id = Id::of(&data);
+    let uncompressed_path = uncompressed_blob_path(&repository_path, &id);
+    let compressed_path = blob_path(&repository_path, &id);
+    fs::write(&uncompressed_path, &data).unwrap();
+    set_xattr(
+        &uncompressed_path,
+        "user.bitcache.media-type",
+        b"text/plain",
+    );
+
+    repository.compact().await.unwrap();
+
+    assert!(!uncompressed_path.exists());
+    assert!(compressed_path.exists());
+    let compacted_metadata = fs::metadata(&compressed_path).unwrap();
+    assert_eq!(compacted_metadata.permissions().mode() & 0o777, 0o444);
+    assert_eq!(read_blob_file(&repository, &id).await, data);
+    assert_eq!(
+        repository
+            .get(&id)
+            .await
+            .unwrap()
+            .unwrap()
+            .metadata()
+            .media_type(),
+        Some("text/plain")
+    );
+    assert!(fs::read_dir(&repository_path).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".put-")
+    }));
+
+    repository.compact().await.unwrap();
+    assert_eq!(
+        fs::metadata(&compressed_path).unwrap().ino(),
+        compacted_metadata.ino()
+    );
+}
+
+#[tokio::test]
 async fn test_fs_repository_expiry_and_media_type_round_trip() {
     let temp_dir = TestDir::new();
     let repository_path = temp_dir.path().join("repository");
