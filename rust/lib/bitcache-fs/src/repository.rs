@@ -1,12 +1,14 @@
 // This is free and unencumbered software released into the public domain.
 
 use crate::{
-    BlobEncoding, BlobFile, Dir, Utf8Path,
+    BlobEncoding, BlobFile, Dir, DirCursor, Utf8Path,
+    dir_cursor::SHARD_PREFIX_LEN,
     file_metadata::{self, ExtendedMetadata},
 };
 use bitcache_core::{
     Blob, BlobMetadata, BlobMetadataCapabilities, Bytes, Id, ListOptions, ListOrder, PutOptions,
-    Repository, RepositoryCapabilities, RepositoryError, Stream, futures_util::stream,
+    Repository, RepositoryCapabilities, RepositoryError, Stream,
+    futures_util::StreamExt,
 };
 #[cfg(unix)]
 use cap_std::fs_utf8::{MetadataExt, PermissionsExt};
@@ -31,13 +33,6 @@ const FASTEST_XZ_DICTIONARY_SIZE: u64 = 256 * 1024;
 
 /// A process-local sequence used to make temporary filenames unique.
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
-
-/// The number of leading hexadecimal characters of the blob ID used to name
-/// the shard subdirectory a blob is stored in.
-const SHARD_PREFIX_LEN: usize = 2;
-
-/// The number of shard subdirectories (`00` through `ff` for a prefix of 2).
-const SHARD_COUNT: u32 = 1 << (4 * SHARD_PREFIX_LEN as u32);
 
 struct PhysicalBlob {
     name: String,
@@ -104,9 +99,11 @@ impl FsRepository {
         Ok(repository)
     }
 
-    /// The names of all shard subdirectories, in ascending order.
-    fn shard_names() -> impl DoubleEndedIterator<Item = String> {
-        (0..SHARD_COUNT).map(|shard| std::format!("{shard:0width$x}", width = SHARD_PREFIX_LEN))
+    /// Creates a cursor over the physical blobs in the repository directory.
+    ///
+    /// See [`DirCursor`] for ordering and memory-use guarantees.
+    fn cursor(&self, descending: bool) -> DirCursor {
+        DirCursor::open(&self.0, descending)
     }
 
     /// Creates the shard subdirectory for the given blob ID if it doesn't
@@ -589,58 +586,6 @@ impl FsRepository {
         }
     }
 
-    /// Collects the physical blob IDs in one shard subdirectory, including
-    /// expired blobs, sorted in ascending order.
-    fn collect_shard_ids(&self, shard: &str) -> Result<Vec<Id>, RepositoryError> {
-        let dir = match self.0.open_dir(shard) {
-            Ok(dir) => dir,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(error.into()),
-        };
-        let mut ids = Vec::new();
-        for entry in dir.entries()? {
-            let entry = entry?;
-            if !entry.file_type()?.is_file() {
-                continue;
-            }
-            let Ok(name) = entry.file_name() else {
-                continue;
-            };
-            let name = name.strip_suffix(".xz").unwrap_or(&name);
-            if let Ok(id) = Id::from_hex(name) {
-                ids.push(id);
-            }
-        }
-        ids.sort_unstable();
-        ids.dedup();
-        Ok(ids)
-    }
-
-    /// Lazily yields batches of physical blob IDs, one shard subdirectory at
-    /// a time, including expired blobs.
-    ///
-    /// Only a single shard's IDs are materialized in memory at once. Batches
-    /// are yielded in ascending shard order (descending when requested), and
-    /// each batch is sorted accordingly, so concatenating the batches yields
-    /// all IDs in order.
-    fn physical_id_batches(
-        &self,
-        descending: bool,
-    ) -> impl Iterator<Item = Result<Vec<Id>, RepositoryError>> + '_ {
-        let mut shards: Vec<String> = Self::shard_names().collect();
-        if descending {
-            shards.reverse();
-        }
-        shards.into_iter().map(move |shard| {
-            self.collect_shard_ids(&shard).map(|mut ids| {
-                if descending {
-                    ids.reverse();
-                }
-                ids
-            })
-        })
-    }
-
     /// Opens the blob with the given ID for asynchronous streaming reads.
     ///
     /// Returns `Ok(None)` if the repository doesn't contain the blob or it has
@@ -948,11 +893,15 @@ impl Repository for FsRepository {
     async fn compact(&mut self) -> Result<(), Self::Error> {
         #[cfg(feature = "tokio")]
         {
-            let this = &*self;
-            for batch in this.physical_id_batches(false) {
-                for id in batch? {
-                    this.compact_blob(&id).await?;
+            let mut cursor = self.cursor(false);
+            let mut previous: Option<Id> = None;
+            while let Some(item) = cursor.next().await {
+                let (id, _encoding) = item?;
+                if previous.as_ref() == Some(&id) {
+                    continue;
                 }
+                self.compact_blob(&id).await?;
+                previous = Some(id);
             }
             Ok(())
         }
@@ -964,46 +913,58 @@ impl Repository for FsRepository {
     async fn clear(&mut self) -> Result<(), Self::Error> {
         // Removes all blobs one shard batch at a time, preserving the shard
         // subdirectories themselves.
-        let this = &*self;
-        for batch in this.physical_id_batches(false) {
-            for id in batch? {
-                for encoding in [BlobEncoding::Uncompressed, BlobEncoding::Xz] {
-                    match this.0.remove_file(Self::path_for(&id, encoding)) {
-                        Ok(()) => (),
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                        Err(error) => return Err(error.into()),
-                    }
-                }
+        let mut cursor = self.cursor(false);
+        while let Some(item) = cursor.next().await {
+            let (id, encoding) = item?;
+            match self.0.remove_file(Self::path_for(&id, encoding)) {
+                Ok(()) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+                Err(error) => return Err(error.into()),
             }
         }
         Ok(())
     }
 
     fn list(&self, options: ListOptions) -> impl Stream<Item = Result<Id, Self::Error>> {
-        // Iterate one shard subdirectory batch at a time, reading and sorting
-        // only its entries; shards are visited in ID order, so the overall
-        // stream remains ordered while bounding memory use.
+        // The cursor visits one shard subdirectory at a time in ID order, so
+        // the stream is ordered while memory use stays bounded by shard size.
         let descending = options.order == Some(ListOrder::Descending);
         let limit = options.limit.unwrap_or(usize::MAX);
-        stream::iter(
-            self.physical_id_batches(descending)
-                .flat_map(move |batch| match batch {
-                    Ok(ids) => ids
-                        .into_iter()
-                        .filter(|id| options.matches(id))
-                        .map(|id| self.open_live(&id).map(|live| live.map(|_| id)))
-                        .filter_map(Result::transpose)
-                        .collect::<Vec<_>>(),
-                    Err(error) => std::vec![Err(error)],
-                })
-                .scan(false, |failed, item| {
+        self.cursor(descending)
+            .scan(
+                (None::<Id>, false),
+                move |(previous, failed), item| {
                     if *failed {
-                        return None;
+                        return core::future::ready(None);
                     }
-                    *failed = item.is_err();
-                    Some(item)
-                })
-                .take(limit),
-        )
+                    let item = match item {
+                        Err(error) => {
+                            *failed = true;
+                            Some(Err(error))
+                        },
+                        // Skip the duplicate entry when a blob exists in both
+                        // encodings (entries for one ID are adjacent).
+                        Ok((id, _encoding)) if previous.as_ref() == Some(&id) => None,
+                        Ok((id, _encoding)) => {
+                            *previous = Some(id.clone());
+                            if !options.matches(&id) {
+                                None
+                            } else {
+                                match self.open_live(&id) {
+                                    Ok(Some(_)) => Some(Ok(id)),
+                                    Ok(None) => None,
+                                    Err(error) => {
+                                        *failed = true;
+                                        Some(Err(error))
+                                    },
+                                }
+                            }
+                        },
+                    };
+                    core::future::ready(Some(item))
+                },
+            )
+            .filter_map(core::future::ready)
+            .take(limit)
     }
 }
