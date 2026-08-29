@@ -4,6 +4,8 @@
 use alloc::borrow::Cow;
 use core::time::Duration;
 
+use crate::Compression;
+
 /// Options for storing a blob in a repository.
 ///
 /// See [`Repository::put_with_options`](crate::Repository::put_with_options).
@@ -16,6 +18,12 @@ pub struct PutOptions {
     /// capability is set; others store the blob persistently. See
     /// [`Repository::put_with_options`](crate::Repository::put_with_options).
     pub ttl: Option<Duration>,
+
+    /// The compression scheme to store the blob with.
+    ///
+    /// `None` (the default) leaves the choice to the repository backend.
+    /// Backends without physical compression support ignore this.
+    pub compression: Option<Compression>,
 
     /// The explicit media type (MIME type) of the blob's contents.
     ///
@@ -34,6 +42,12 @@ impl PutOptions {
     /// Expires the blob the given duration after it is stored.
     pub fn with_ttl(mut self, ttl: impl Into<Option<Duration>>) -> Self {
         self.ttl = ttl.into();
+        self
+    }
+
+    /// Sets the compression scheme to store the blob with.
+    pub fn with_compression(mut self, compression: impl Into<Option<Compression>>) -> Self {
+        self.compression = compression.into();
         self
     }
 

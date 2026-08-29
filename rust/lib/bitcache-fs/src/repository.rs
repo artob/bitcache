@@ -8,9 +8,9 @@ use crate::{
 #[cfg(feature = "tokio")]
 use crate::BlobFile;
 use bitcache_core::{
-    Blob, BlobMetadata, BlobMetadataCapabilities, Bytes, Id, ListOptions, ListOrder, PutOptions,
-    Repository, RepositoryCapabilities, RepositoryError, Stream,
-    futures_util::StreamExt,
+    Blob, BlobMetadata, BlobMetadataCapabilities, Bytes, CompactOptions, Compression, Id,
+    ListOptions, ListOrder, PutOptions, Repository, RepositoryCapabilities, RepositoryError,
+    Stream, futures_util::StreamExt,
 };
 #[cfg(unix)]
 use cap_std::fs_utf8::{MetadataExt, PermissionsExt};
@@ -35,6 +35,10 @@ const FASTEST_XZ_DICTIONARY_SIZE: u64 = 256 * 1024;
 
 /// A process-local sequence used to make temporary filenames unique.
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+/// The compression scheme used to store blobs when the caller leaves
+/// [`PutOptions::compression`] unset.
+const DEFAULT_PUT_COMPRESSION: Compression = Compression::XzFast;
 
 /// The common prefix of all temporary artifacts at the repository root
 /// (`.tmp-put-*` files, `.tmp-clear-*` directories), so that an admin can
@@ -540,11 +544,16 @@ impl FsRepository {
         }
     }
 
-    /// Selects a blob that needs maximum XZ recompression.
+    /// Selects a blob that needs recompression toward the given target.
+    ///
+    /// Uncompressed blobs are always candidates. Existing XZ blobs are only
+    /// candidates when recompressing to `xz:best` and they were written with
+    /// the fastest (smallest-dictionary) preset.
     #[cfg(feature = "tokio")]
     fn compact_source(
         &self,
         id: &Id,
+        recompress_fast_xz: bool,
     ) -> Result<Option<(BlobEncoding, cap_std::fs::Metadata)>, RepositoryError> {
         use crate::util::read_xz_dict_size;
         use std::io::ErrorKind;
@@ -558,6 +567,9 @@ impl FsRepository {
             Err(error) => return Err(error.into()),
         }
 
+        if !recompress_fast_xz {
+            return Ok(None);
+        }
         let mut file = match self.0.open(Self::compressed_path(id)) {
             Ok(file) => file,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
@@ -570,15 +582,35 @@ impl FsRepository {
         )
     }
 
-    /// Rewrites an uncompressed or minimally compressed blob using maximum XZ compression.
+    /// The XZ compression level for the given scheme, or `None` for
+    /// uncompressed storage.
     #[cfg(feature = "tokio")]
-    async fn compact_blob(&self, id: &Id) -> Result<(), RepositoryError> {
-        use async_compression::{Level, tokio::write::XzEncoder};
+    fn xz_level(compression: Compression) -> Option<async_compression::Level> {
+        match compression {
+            Compression::None => None,
+            Compression::XzFast => Some(async_compression::Level::Fastest),
+            Compression::XzBest => Some(async_compression::Level::Best),
+        }
+    }
+
+    /// Rewrites a blob using the given target compression, if it needs it.
+    #[cfg(feature = "tokio")]
+    async fn compact_blob(
+        &self,
+        id: &Id,
+        compression: Compression,
+    ) -> Result<(), RepositoryError> {
+        use async_compression::tokio::write::XzEncoder;
         use bitcache_core::tokio::{fs::File, io::AsyncWriteExt};
 
-        std::eprintln!("Compacting {}...", id);
-
-        let Some((source_encoding, source_metadata)) = self.compact_source(id)? else {
+        let Some(level) = Self::xz_level(compression) else {
+            // Target `none`: existing blob encodings are left as they are.
+            return Ok(());
+        };
+        let recompress_fast_xz = compression == Compression::XzBest;
+        let Some((source_encoding, source_metadata)) =
+            self.compact_source(id, recompress_fast_xz)?
+        else {
             return Ok(());
         };
         let source_name = Self::path_for(id, source_encoding);
@@ -596,7 +628,7 @@ impl FsRepository {
         let mut source_file = BlobFile::new(source_file, source_encoding);
         let (temp_name, temp_file) = self.create_temp_file()?;
         let temp_file = File::from_std(temp_file.into_std());
-        let mut encoder = XzEncoder::with_quality(temp_file, Level::Best);
+        let mut encoder = XzEncoder::with_quality(temp_file, level);
 
         let result: Result<(), RepositoryError> = async {
             bitcache_core::tokio::io::copy(&mut source_file, &mut encoder).await?;
@@ -680,15 +712,20 @@ impl FsRepository {
         input_path: impl AsRef<std::path::Path>,
         options: PutOptions,
     ) -> Result<Id, RepositoryError> {
-        use async_compression::{Level, tokio::write::XzEncoder};
         use bitcache_core::{
             Hasher,
             tokio::{
                 fs::File,
-                io::{AsyncReadExt, AsyncWriteExt},
+                io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
             },
         };
 
+        let compression = options.compression.unwrap_or(DEFAULT_PUT_COMPRESSION);
+        let level = Self::xz_level(compression);
+        let encoding = match level {
+            Some(_) => BlobEncoding::Xz,
+            None => BlobEncoding::Uncompressed,
+        };
         let metadata = Self::store_metadata(
             options.expires_nanos(),
             options.media_type().map(ToString::to_string),
@@ -696,7 +733,12 @@ impl FsRepository {
         let mut input_file = File::open(input_path.as_ref()).await?;
         let (temp_name, temp_file) = self.create_temp_file()?;
         let temp_file = File::from_std(temp_file.into_std());
-        let mut encoder = XzEncoder::with_quality(temp_file, Level::Best);
+        let mut writer: std::pin::Pin<std::boxed::Box<dyn AsyncWrite + Send>> = match level {
+            Some(level) => std::boxed::Box::pin(
+                async_compression::tokio::write::XzEncoder::with_quality(temp_file, level),
+            ),
+            None => std::boxed::Box::pin(temp_file),
+        };
 
         let result: Result<Id, RepositoryError> = async {
             let mut hasher = Hasher::new();
@@ -706,16 +748,16 @@ impl FsRepository {
                     0 => break,
                     n => {
                         hasher.update(&buffer[..n]);
-                        encoder.write_all(&buffer[..n]).await?;
+                        writer.write_all(&buffer[..n]).await?;
                     },
                 }
             }
-            encoder.shutdown().await?;
+            writer.shutdown().await?;
             Ok(Id(hasher.finalize()))
         }
         .await;
 
-        drop(encoder);
+        drop(writer);
         match result {
             Ok(id) => {
                 let temp_file = match self.0.open(&temp_name) {
@@ -731,7 +773,7 @@ impl FsRepository {
                     return Err(error);
                 }
                 drop(temp_file);
-                self.publish_temp(&temp_name, &id, &metadata, BlobEncoding::Xz)?;
+                self.publish_temp(&temp_name, &id, &metadata, encoding)?;
                 Ok(id)
             },
             Err(error) => {
@@ -755,19 +797,31 @@ impl FsRepository {
 
         #[cfg(feature = "tokio")]
         let (result, encoding) = {
-            use async_compression::{Level, tokio::write::XzEncoder};
-            use bitcache_core::tokio::{fs::File, io::AsyncWriteExt};
+            use bitcache_core::tokio::{
+                fs::File,
+                io::{AsyncWrite, AsyncWriteExt},
+            };
 
+            let level = Self::xz_level(options.compression.unwrap_or(DEFAULT_PUT_COMPRESSION));
+            let encoding = match level {
+                Some(_) => BlobEncoding::Xz,
+                None => BlobEncoding::Uncompressed,
+            };
             let temp_file = File::from_std(temp_file.into_std());
-            let mut encoder = XzEncoder::with_quality(temp_file, Level::Best);
+            let mut writer: std::pin::Pin<std::boxed::Box<dyn AsyncWrite + Send>> = match level {
+                Some(level) => std::boxed::Box::pin(
+                    async_compression::tokio::write::XzEncoder::with_quality(temp_file, level),
+                ),
+                None => std::boxed::Box::pin(temp_file),
+            };
             let result = async {
-                encoder.write_all(&data).await?;
-                encoder.shutdown().await?;
+                writer.write_all(&data).await?;
+                writer.shutdown().await?;
                 Ok::<(), RepositoryError>(())
             }
             .await;
-            drop(encoder);
-            (result, BlobEncoding::Xz)
+            drop(writer);
+            (result, encoding)
         };
 
         #[cfg(not(feature = "tokio"))]
@@ -994,6 +1048,10 @@ impl Repository for FsRepository {
     }
 
     async fn compact(&mut self) -> Result<(), Self::Error> {
+        self.compact_with_options(CompactOptions::default()).await
+    }
+
+    async fn compact_with_options(&mut self, options: CompactOptions) -> Result<(), Self::Error> {
         // Compaction doubles as maintenance: sweep any orphaned temporary
         // artifacts left behind by interrupted operations.
         self.remove_stale_temp_artifacts();
@@ -1007,14 +1065,17 @@ impl Repository for FsRepository {
                 if previous.as_ref() == Some(&id) {
                     continue;
                 }
-                self.compact_blob(&id).await?;
+                self.compact_blob(&id, options.compression).await?;
                 previous = Some(id);
             }
             Ok(())
         }
 
         #[cfg(not(feature = "tokio"))]
-        Ok(())
+        {
+            let _ = options;
+            Ok(())
+        }
     }
 
     async fn clear(&mut self) -> Result<(), Self::Error> {

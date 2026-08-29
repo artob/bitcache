@@ -3,6 +3,7 @@
 #![cfg(unix)]
 
 use bitcache_core::{
+    CompactOptions, Compression,
     Bytes, Id, ListOptions, PutOptions, Repository, RepositoryError, futures_util::StreamExt,
 };
 use bitcache_fs::FsRepository;
@@ -309,7 +310,10 @@ async fn test_compact_compresses_uncompressed_blobs() {
     let source_created = source_metadata.created().ok().map(nanos_since_epoch);
     let source_updated = u64::try_from(ctime_nanos(&source_metadata)).ok();
 
-    repository.compact().await.unwrap();
+    repository
+        .compact_with_options(CompactOptions::new().with_compression(Compression::XzBest))
+        .await
+        .unwrap();
 
     assert!(!uncompressed_path.exists());
     assert!(compressed_path.exists());
@@ -331,7 +335,10 @@ async fn test_compact_compresses_uncompressed_blobs() {
             .starts_with(".tmp-")
     }));
 
-    repository.compact().await.unwrap();
+    repository
+        .compact_with_options(CompactOptions::new().with_compression(Compression::XzBest))
+        .await
+        .unwrap();
     assert_eq!(
         fs::metadata(&compressed_path).unwrap().ino(),
         compacted_metadata.ino()
@@ -358,7 +365,10 @@ async fn test_compact_recompresses_minimally_compressed_blobs() {
     let updated = blob.metadata().updated_nanos();
     let before = fs::metadata(&compressed_path).unwrap();
 
-    repository.compact().await.unwrap();
+    repository
+        .compact_with_options(CompactOptions::new().with_compression(Compression::XzBest))
+        .await
+        .unwrap();
 
     let after = fs::metadata(&compressed_path).unwrap();
     assert_ne!(after.ino(), before.ino());
@@ -372,7 +382,10 @@ async fn test_compact_recompresses_minimally_compressed_blobs() {
     assert_eq!(blob.metadata().updated_nanos(), updated);
     assert_eq!(blob.metadata().media_type(), Some("text/plain"));
 
-    repository.compact().await.unwrap();
+    repository
+        .compact_with_options(CompactOptions::new().with_compression(Compression::XzBest))
+        .await
+        .unwrap();
     assert_eq!(fs::metadata(&compressed_path).unwrap().ino(), after.ino());
 }
 

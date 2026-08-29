@@ -129,6 +129,7 @@ cli = [
     "std",
     "tokio",
     "bitcache-core/clap",
+    "bitcache-core/config",
     "dep:astral-tokio-tar",
     "dep:bitcache-fs",
     "dep:clap",

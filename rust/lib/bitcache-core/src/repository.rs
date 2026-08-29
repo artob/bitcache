@@ -1,6 +1,6 @@
 // This is free and unencumbered software released into the public domain.
 
-use crate::{Blob, Id, ListOptions, PutOptions, RepositoryCapabilities};
+use crate::{Blob, CompactOptions, Id, ListOptions, PutOptions, RepositoryCapabilities};
 use bytes::Bytes;
 use core::{future::Future, time::Duration};
 use futures_core::Stream;
@@ -167,6 +167,19 @@ pub trait Repository: Send + Sync {
     /// the repository's logical contents.
     fn compact(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send {
         async { Ok(()) }
+    }
+
+    /// Performs backend-specific repository maintenance, with options.
+    ///
+    /// The default implementation ignores the options and delegates to
+    /// [`Repository::compact`]. Backends with physical compression support
+    /// (e.g., the filesystem backend) honor [`CompactOptions::compression`].
+    fn compact_with_options(
+        &mut self,
+        options: CompactOptions,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        let _ = options;
+        self.compact()
     }
 
     /// Removes all blobs, resetting the repository to an empty state.

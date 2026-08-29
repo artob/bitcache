@@ -1,8 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache::{
-    Bytes, DynRepository, Id, IdEncoding, ListOptions, ListOrder, PutOptions, Repository,
-    RepositoryError, futures_util::StreamExt,
+    Bytes, CompactOptions, Compression, Config, DynRepository, Id, IdEncoding, ListOptions,
+    ListOrder, PutOptions, Repository, RepositoryError, futures_util::StreamExt,
 };
 use clientele::{
     ColorChoiceExt, StandardOptions, SysexitsError,
@@ -32,8 +32,8 @@ enum Command {
     #[clap(aliases = ["identify", "hash"])]
     Id {
         /// The format to use for the hash output.
-        #[arg(short, long, value_name = "FORMAT", default_value = "hex")]
-        format: IdEncoding,
+        #[arg(short, long, value_name = "FORMAT")]
+        format: Option<IdEncoding>,
 
         /// The paths to the file(s) to hash.
         #[arg(value_name = "FILES")]
@@ -54,8 +54,8 @@ enum Command {
     #[clap(alias = "ls")]
     List {
         /// The format to use for the hash output.
-        #[arg(short, long, value_name = "FORMAT", default_value = "hex")]
-        format: IdEncoding,
+        #[arg(short, long, value_name = "FORMAT")]
+        format: Option<IdEncoding>,
 
         /// List only IDs whose hexadecimal encoding begins with this prefix.
         #[arg(short, long, value_name = "PREFIX")]
@@ -101,8 +101,16 @@ enum Command {
     /// blob is simply retained with the same ID.
     Put {
         /// The format to use for the hash output.
-        #[arg(short, long, value_name = "FORMAT", default_value = "hex")]
-        format: IdEncoding,
+        #[arg(short, long, value_name = "FORMAT")]
+        format: Option<IdEncoding>,
+
+        /// The compression scheme for physically storing the blob(s).
+        ///
+        /// One of `none`, `xz`, `xz:fast`, or `xz:best` (`xz` is an alias
+        /// for `xz:fast`). Defaults to the `compress` directive of the
+        /// `[bitcache.put]` config section, or else `none`.
+        #[arg(long, value_name = "SCHEME")]
+        compress: Option<Compression>,
 
         /// Expire the stored blob(s) after the given duration.
         ///
@@ -136,9 +144,18 @@ enum Command {
 
     /// Compact the repository's physical storage.
     ///
-    /// Filesystem repositories rewrite uncompressed blobs using maximum XZ
-    /// compression. Other repository backends may perform no maintenance.
-    Compact {},
+    /// Filesystem repositories rewrite stored blobs using the requested
+    /// compression scheme and clean up orphaned temporary artifacts. Other
+    /// repository backends may perform no maintenance.
+    Compact {
+        /// The target compression scheme for stored blobs.
+        ///
+        /// One of `none`, `xz`, `xz:fast`, or `xz:best` (`xz` is an alias
+        /// for `xz:fast`). Defaults to the `compress` directive of the
+        /// `[bitcache.compact]` config section, or else `xz`.
+        #[arg(long, value_name = "SCHEME")]
+        compress: Option<Compression>,
+    },
 
     /// Remove all blobs from the repository.
     ///
@@ -318,21 +335,31 @@ pub async fn main() -> Result<(), SysexitsError> {
     // Configure debug output:
     if flags.debug {}
 
+    // Load the repository configuration (`.bitcache/config.toml`), if any:
+    let config = match Config::load_or_default(CONFIG_PATH) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("bitcache: {}", error);
+            return Err(SysexitsError::EX_CONFIG);
+        },
+    };
+    let default_format = config.bitcache.encoding.unwrap_or_default();
+
     match options.command.unwrap() {
         Command::Id { format, paths } => {
+            let format = format.unwrap_or(default_format);
             for path in paths {
                 let id = bitcache_core::sync::identify_file(&path)?;
-                match format {
-                    IdEncoding::Hex => println!("{}", id.to_hex()),
-                    #[cfg(feature = "base58")]
-                    IdEncoding::Base58 => println!("{}", id.to_base58()),
-                }
+                println!("{}", format_id(&id, format));
             }
             Ok(())
         },
 
         Command::Init {} => {
             let _repository = bitcache_fs::FsRepository::create(".bitcache")?;
+            if !std::path::Path::new(CONFIG_PATH).exists() {
+                std::fs::write(CONFIG_PATH, bitcache::DEFAULT_CONFIG_TOML)?;
+            }
             Ok(())
         },
 
@@ -342,6 +369,7 @@ pub async fn main() -> Result<(), SysexitsError> {
             after,
             limit,
         } => {
+            let format = format.unwrap_or(default_format);
             let mut list_options = ListOptions::default().with_order(ListOrder::Ascending);
             if let Some(prefix) = prefix {
                 if prefix.len() > 64 || !prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -356,11 +384,7 @@ pub async fn main() -> Result<(), SysexitsError> {
             let mut ids = std::pin::pin!(repository.list(list_options));
             while let Some(id) = ids.next().await {
                 let id = id?;
-                match format {
-                    IdEncoding::Hex => print!("{}", id.to_hex()),
-                    #[cfg(feature = "base58")]
-                    IdEncoding::Base58 => print!("{}", id.to_base58()),
-                }
+                print!("{}", format_id(&id, format));
                 if flags.verbose == 0 {
                     println!();
                     continue;
@@ -436,12 +460,18 @@ pub async fn main() -> Result<(), SysexitsError> {
 
         Command::Put {
             format,
+            compress,
             ttl,
             media_type,
             paths,
         } => {
+            let format = format.unwrap_or(default_format);
+            let compress = compress
+                .or(config.bitcache.put.as_ref().and_then(|put| put.compress))
+                .unwrap_or(Compression::None);
             let options = PutOptions::new()
                 .with_ttl(ttl)
+                .with_compression(compress)
                 .with_media_type(media_type.map(std::borrow::Cow::Owned));
             let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             let metadata_capabilities = repository.capabilities().blob_metadata();
@@ -457,12 +487,7 @@ pub async fn main() -> Result<(), SysexitsError> {
                 let buffer = tokio::fs::read(&path).await?;
                 let bytes = Bytes::from(buffer);
                 let id = repository.put_with_options(bytes, options.clone()).await?;
-
-                match format {
-                    IdEncoding::Hex => println!("{}", id.to_hex()),
-                    #[cfg(feature = "base58")]
-                    IdEncoding::Base58 => println!("{}", id.to_base58()),
-                }
+                println!("{}", format_id(&id, format));
             }
             Ok(())
         },
@@ -480,9 +505,18 @@ pub async fn main() -> Result<(), SysexitsError> {
             Ok(())
         },
 
-        Command::Compact {} => {
+        Command::Compact { compress } => {
+            let compress = compress
+                .or(config
+                    .bitcache
+                    .compact
+                    .as_ref()
+                    .and_then(|compact| compact.compress))
+                .unwrap_or(Compression::XzFast);
             let mut repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
-            repository.compact().await?;
+            repository
+                .compact_with_options(CompactOptions::new().with_compression(compress))
+                .await?;
             Ok(())
         },
 
@@ -530,6 +564,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         Command::Push { remotes } => {
             let local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for remote in remotes {
+                let remote = resolve_remote(&config, remote);
                 let mut remote_repository = bitcache::open(&remote).await?;
                 sync(&local_repository, &mut remote_repository).await?;
             }
@@ -539,6 +574,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         Command::Pull { remotes } => {
             let mut local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for remote in remotes {
+                let remote = resolve_remote(&config, remote);
                 let remote_repository = bitcache::open(&remote).await?;
                 sync(&remote_repository, &mut local_repository).await?;
             }
@@ -548,6 +584,7 @@ pub async fn main() -> Result<(), SysexitsError> {
         Command::Sync { remotes } => {
             let mut local_repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
             for remote in remotes {
+                let remote = resolve_remote(&config, remote);
                 let mut remote_repository = bitcache::open(&remote).await?;
                 sync(&remote_repository, &mut local_repository).await?;
                 sync(&local_repository, &mut remote_repository).await?;
@@ -555,6 +592,27 @@ pub async fn main() -> Result<(), SysexitsError> {
             Ok(())
         },
     }
+}
+
+/// The path to the local repository configuration file.
+const CONFIG_PATH: &str = ".bitcache/config.toml";
+
+/// Formats a blob ID using the given encoding.
+fn format_id(id: &Id, encoding: IdEncoding) -> String {
+    match encoding {
+        IdEncoding::Hex => id.to_hex().to_string(),
+        #[cfg(feature = "base58")]
+        IdEncoding::Base58 => id.to_base58().to_string(),
+    }
+}
+
+/// Resolves a remote name from a `[bitcache.remote.NAME]` config section to
+/// its URL; other arguments are returned unchanged (assumed to be URLs).
+fn resolve_remote(config: &Config, remote: String) -> String {
+    config
+        .remote_url(&remote)
+        .map(str::to_string)
+        .unwrap_or(remote)
 }
 
 async fn sync(

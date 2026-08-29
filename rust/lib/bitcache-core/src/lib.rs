@@ -58,6 +58,18 @@ pub use blob_reader::*;
 mod blob_metadata;
 pub use blob_metadata::*;
 
+mod compact_options;
+pub use compact_options::*;
+
+mod compression;
+pub use compression::*;
+
+#[cfg(feature = "config")]
+#[cfg_attr(docsrs, doc(cfg(feature = "config")))]
+mod config;
+#[cfg(feature = "config")]
+pub use config::*;
+
 mod id;
 pub use id::*;
 
