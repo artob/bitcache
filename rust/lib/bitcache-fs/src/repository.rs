@@ -791,6 +791,53 @@ impl FsRepository {
         None
     }
 
+    /// Clones the given blob file to the destination path via a reflink,
+    /// replacing any existing file, without copying any data.
+    ///
+    /// Returns `false` if reflinking isn't possible (unsupported filesystem,
+    /// different volume, etc.); the caller should fall back to copying.
+    #[cfg(all(feature = "tokio", target_os = "linux"))]
+    fn reflink_to_path(source: &File, path: &std::path::Path) -> bool {
+        let Ok(destination) = std::fs::File::create(path) else {
+            return false;
+        };
+        // On failure the destination is left empty; the streaming fallback
+        // rewrites it.
+        rustix::fs::ioctl_ficlone(&destination, source).is_ok()
+    }
+
+    /// Clones the given blob file to the destination path via `clonefile`,
+    /// replacing any existing file, without copying any data.
+    ///
+    /// Returns `false` if cloning isn't possible (unsupported filesystem,
+    /// different volume, etc.); the caller should fall back to copying.
+    #[cfg(all(feature = "tokio", target_vendor = "apple"))]
+    fn reflink_to_path(source: &File, path: &std::path::Path) -> bool {
+        use rustix::fs::CloneFlags;
+        use std::os::unix::fs::PermissionsExt as _;
+
+        // `clonefile` requires that the destination not exist; `-o`-style
+        // output semantics are to replace it.
+        let _ = std::fs::remove_file(path);
+        if rustix::fs::fclonefileat(source, rustix::fs::CWD, path, CloneFlags::empty()).is_err() {
+            return false;
+        }
+        // The clone inherits the blob's read-only permissions; give the
+        // user a normally writable output file instead (best effort).
+        if let Ok(metadata) = std::fs::metadata(path) {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(0o644);
+            let _ = std::fs::set_permissions(path, permissions);
+        }
+        true
+    }
+
+    /// Reflinks are not supported on this platform.
+    #[cfg(all(feature = "tokio", not(any(target_os = "linux", target_vendor = "apple"))))]
+    fn reflink_to_path(_source: &File, _path: &std::path::Path) -> bool {
+        false
+    }
+
     /// Attempts to store the file at the given path as an uncompressed blob
     /// by reflinking it into the repository, avoiding a data copy.
     ///
@@ -1157,6 +1204,25 @@ impl Repository for FsRepository {
         options: PutOptions,
     ) -> Result<Id, Self::Error> {
         self.put_file_with_options(path, options).await
+    }
+
+    #[cfg(feature = "tokio")]
+    async fn get_to_path(&self, id: &Id, path: &std::path::Path) -> Result<bool, Self::Error> {
+        let Some(blob) = self.open_live(id)? else {
+            return Ok(false);
+        };
+        // Uncompressed blobs can be reflinked (cloned) straight to the
+        // destination on supporting filesystems, avoiding a data copy:
+        if blob.encoding == BlobEncoding::Uncompressed
+            && Self::reflink_to_path(&blob.file, path)
+        {
+            return Ok(true);
+        }
+        // Otherwise, stream the (possibly compressed) blob to the file:
+        let mut reader = BlobFile::new(blob.file, blob.encoding);
+        let mut output = bitcache_core::tokio::fs::File::create(path).await?;
+        bitcache_core::tokio::io::copy(&mut reader, &mut output).await?;
+        Ok(true)
     }
 
     async fn remove(&mut self, id: &Id) -> Result<bool, Self::Error> {

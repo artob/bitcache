@@ -25,17 +25,18 @@ struct Options {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Compute the BLAKE3 hash of the given file(s).
+    /// Compute the BLAKE3 hash of the given file(s), or of stdin.
     ///
     /// Prints the ID each file would have as a blob, one per line, without
-    /// accessing or modifying any repository.
+    /// accessing or modifying any repository. With no files (or with `-`),
+    /// reads from standard input.
     #[clap(aliases = ["identify", "hash"])]
     Id {
         /// The format to use for the hash output.
         #[arg(short, long, value_name = "FORMAT")]
         format: Option<IdEncoding>,
 
-        /// The paths to the file(s) to hash.
+        /// The paths to the file(s) to hash (`-` or none for stdin).
         #[arg(value_name = "FILES")]
         paths: Vec<PathBuf>,
     },
@@ -78,10 +79,6 @@ enum Command {
         #[arg(short, long, value_name = "FORMAT")]
         format: Option<IdEncoding>,
 
-        /// List only IDs whose hexadecimal encoding begins with this prefix.
-        #[arg(short, long, value_name = "PREFIX")]
-        prefix: Option<String>,
-
         /// List only IDs ordered strictly after this one.
         #[arg(short = 'a', long, value_name = "ID")]
         after: Option<Id>,
@@ -89,6 +86,10 @@ enum Command {
         /// List at most this many IDs.
         #[arg(short = 'n', long, value_name = "COUNT")]
         limit: Option<usize>,
+
+        /// List only IDs whose hexadecimal encoding begins with this prefix.
+        #[arg(value_name = "PREFIX")]
+        prefix: Option<String>,
     },
 
     /// Check whether the repository contains blob(s) with the given ID(s).
@@ -106,13 +107,32 @@ enum Command {
 
     /// Fetch blob(s) from the repository, writing their contents to stdout.
     ///
+    /// IDs may be given as unambiguous hexadecimal prefixes: each prefix
+    /// resolves to the first matching blob ID in the repository.
+    ///
     /// Exits with a nonzero status unless all of the given blobs were found
     /// in the repository.
     #[clap(alias = "cat")]
     Get {
-        /// The IDs of the blob(s) to fetch.
+        /// Print only the first COUNT lines of each blob.
+        #[arg(short = 'n', long, value_name = "COUNT")]
+        lines: Option<usize>,
+
+        /// The output format: `raw` (the default) or `base64`.
+        #[arg(short, long, value_name = "FORMAT", default_value = "raw")]
+        format: GetFormat,
+
+        /// Write the output to this file instead of stdout.
+        ///
+        /// With a single blob, raw output, and no line limit, filesystem
+        /// repositories reflink uncompressed blobs to the output file on
+        /// supporting filesystems, avoiding a data copy.
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+
+        /// The IDs (or unambiguous ID prefixes) of the blob(s) to fetch.
         #[arg(value_name = "IDS")]
-        ids: Vec<Id>,
+        ids: Vec<String>,
     },
 
     /// Store the given file(s) into the repository as blob(s).
@@ -190,10 +210,13 @@ enum Command {
     },
 
     /// Export all blobs in the repository into a tarball.
+    ///
+    /// Without `--output`, the tar stream is written to stdout, so it can
+    /// be piped to `xz`, `bzip2`, `gzip`, etc.
     Export {
-        /// The path to the tarball file to create.
+        /// The path to the tarball file to create (default: stdout).
         #[arg(short, long, value_name = "FILE")]
-        output: PathBuf,
+        output: Option<PathBuf>,
     },
 
     /// Copy blobs missing from the given remote repositories to them.
@@ -296,6 +319,16 @@ fn subcommand_help_sections(command: &clap::Command) -> String {
     output
 }
 
+/// The output format for `bitcache get`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+enum GetFormat {
+    /// The blob's raw contents.
+    Raw,
+
+    /// ASCII-armored (Base64-encoded) contents, one line per blob.
+    Base64,
+}
+
 /// Parses a time-to-live duration, given either as a plain number of
 /// seconds (e.g. "90") or in a human-friendly format (e.g. "2m30s").
 fn parse_ttl(input: &str) -> Result<std::time::Duration, String> {
@@ -369,8 +402,14 @@ pub async fn main() -> Result<(), SysexitsError> {
     match options.command.unwrap() {
         Command::Id { format, paths } => {
             let format = format.unwrap_or(default_format);
+            let stdin = PathBuf::from("-");
+            let paths = if paths.is_empty() { vec![stdin.clone()] } else { paths };
             for path in paths {
-                let id = bitcache_core::sync::identify_file(&path)?;
+                let id = if path == stdin {
+                    bitcache_core::sync::identify_input(std::io::stdin().lock())?
+                } else {
+                    bitcache_core::sync::identify_file(&path)?
+                };
                 println!("{}", format_id(&id, format));
             }
             Ok(())
@@ -478,20 +517,65 @@ pub async fn main() -> Result<(), SysexitsError> {
             Ok(())
         },
 
-        Command::Get { ids } => {
+        Command::Get {
+            lines,
+            format,
+            output,
+            ids,
+        } => {
             let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
-            let mut stdout = tokio::io::stdout();
-            for id in ids {
-                let Some(blob) = repository.get(&id).await? else {
+            let mut resolved = Vec::with_capacity(ids.len());
+            for input in &ids {
+                resolved.push(resolve_id(&repository, input).await?);
+            }
+
+            // Fast path: a single raw, unabridged blob written to a file can
+            // be reflinked by the repository backend where supported:
+            if let Some(path) = &output
+                && resolved.len() == 1
+                && format == GetFormat::Raw
+                && lines.is_none()
+            {
+                let id = &resolved[0];
+                if !repository.get_to_path(id, path).await? {
+                    eprintln!("bitcache: blob not found: {}", id.to_hex());
+                    return Err(SysexitsError::from(std::io::Error::from(
+                        std::io::ErrorKind::NotFound,
+                    )));
+                }
+                return Ok(());
+            }
+
+            let mut buffer: Vec<u8> = Vec::new();
+            for id in &resolved {
+                let Some(blob) = repository.get(id).await? else {
                     eprintln!("bitcache: blob not found: {}", id.to_hex());
                     return Err(SysexitsError::from(std::io::Error::from(
                         std::io::ErrorKind::NotFound,
                     )));
                 };
-                tokio::io::copy(&mut blob.read(), &mut stdout).await?;
+                let data = blob.read().into_bytes();
+                let data = match lines {
+                    Some(count) => first_lines(&data, count),
+                    None => &data,
+                };
+                match format {
+                    GetFormat::Raw => buffer.extend_from_slice(data),
+                    GetFormat::Base64 => {
+                        buffer.extend_from_slice(data_encoding::BASE64.encode(data).as_bytes());
+                        buffer.push(b'\n');
+                    },
+                }
             }
-            use tokio::io::AsyncWriteExt;
-            stdout.flush().await?;
+            match output {
+                Some(path) => tokio::fs::write(&path, &buffer).await?,
+                None => {
+                    use tokio::io::AsyncWriteExt;
+                    let mut stdout = tokio::io::stdout();
+                    stdout.write_all(&buffer).await?;
+                    stdout.flush().await?;
+                },
+            }
             Ok(())
         },
 
@@ -567,8 +651,11 @@ pub async fn main() -> Result<(), SysexitsError> {
 
         Command::Export { output } => {
             let repository = bitcache::open_env("BITCACHE_URL", "file:.bitcache").await?;
-            let output_file = tokio::fs::File::create(&output).await?;
-            let mut tarball = tokio_tar::Builder::new(output_file);
+            let writer: std::pin::Pin<Box<dyn tokio::io::AsyncWrite + Send>> = match &output {
+                Some(path) => Box::pin(tokio::fs::File::create(path).await?),
+                None => Box::pin(tokio::io::stdout()),
+            };
+            let mut tarball = tokio_tar::Builder::new(writer);
             tarball.mode(tokio_tar::HeaderMode::Deterministic);
             let list_options = ListOptions::default().with_order(ListOrder::Ascending);
             let mut ids = std::pin::pin!(repository.list(list_options));
@@ -592,7 +679,9 @@ pub async fn main() -> Result<(), SysexitsError> {
                 header.set_cksum();
                 tarball.append(&header, blob.read()).await?;
             }
-            tarball.finish().await?;
+            use tokio::io::AsyncWriteExt;
+            let mut writer = tarball.into_inner().await?; // finishes the archive
+            writer.flush().await?;
             Ok(())
         },
 
@@ -648,6 +737,54 @@ fn resolve_remote(config: &Config, remote: String) -> String {
         .remote_url(&remote)
         .map(str::to_string)
         .unwrap_or(remote)
+}
+
+/// Resolves a full blob ID, or a hexadecimal ID prefix to the first
+/// matching blob ID in the repository.
+async fn resolve_id(
+    repository: &DynRepository<'_, RepositoryError>,
+    input: &str,
+) -> Result<Id, SysexitsError> {
+    if let Ok(id) = input.parse::<Id>() {
+        return Ok(id);
+    }
+    if input.is_empty() || input.len() > 64 || !input.bytes().all(|b| b.is_ascii_hexdigit()) {
+        eprintln!("bitcache: invalid blob ID or prefix: {}", input);
+        return Err(SysexitsError::EX_USAGE);
+    }
+    let options = ListOptions::default()
+        .with_order(ListOrder::Ascending)
+        .with_prefix(input)
+        .with_limit(1);
+    let mut ids = std::pin::pin!(repository.list(options));
+    match ids.next().await {
+        Some(Ok(id)) => Ok(id),
+        Some(Err(error)) => Err(error.into()),
+        None => {
+            eprintln!("bitcache: blob not found: {}", input);
+            Err(SysexitsError::from(std::io::Error::from(
+                std::io::ErrorKind::NotFound,
+            )))
+        },
+    }
+}
+
+/// Truncates the given data to its first `count` lines (including their
+/// trailing newlines), like `head -nCOUNT`.
+fn first_lines(data: &[u8], count: usize) -> &[u8] {
+    let mut remaining = count;
+    if remaining == 0 {
+        return &[];
+    }
+    for (index, byte) in data.iter().enumerate() {
+        if *byte == b'\n' {
+            remaining -= 1;
+            if remaining == 0 {
+                return &data[..=index];
+            }
+        }
+    }
+    data
 }
 
 async fn sync(

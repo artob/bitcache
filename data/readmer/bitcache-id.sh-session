@@ -1,13 +1,13 @@
 $ bitcache id --help
-Compute the BLAKE3 hash of the given file(s).
+Compute the BLAKE3 hash of the given file(s), or of stdin.
 
-Prints the ID each file would have as a blob, one per line, without accessing or modifying any repository.
+Prints the ID each file would have as a blob, one per line, without accessing or modifying any repository. With no files (or with `-`), reads from standard input.
 
 Usage: bitcache id [OPTIONS] [FILES]...
 
 Arguments:
   [FILES]...
-          The paths to the file(s) to hash
+          The paths to the file(s) to hash (`-` or none for stdin)
 
 Options:
       --color <COLOR>
@@ -22,8 +22,6 @@ Options:
           Possible values:
           - hex:    Hexadecimal (aka Base16)
           - base58: Base58
-
-          [default: hex]
 
   -d, --debug
           Enable debugging output

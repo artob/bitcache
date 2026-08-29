@@ -134,6 +134,7 @@ cli = [
     "dep:bitcache-fs",
     "dep:clap",
     "dep:color-print",
+    "dep:data-encoding",
 ]
 
 [dependencies]
@@ -155,6 +156,7 @@ ctor = { version = "1.0", default-features = false, features = ["proc_macro"], o
 astral-tokio-tar = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 clientele = { workspace = true, optional = true }
+data-encoding = { workspace = true, optional = true }
 color-print = { version = "=0.3.7", optional = true }
 tokio = { workspace = true, optional = true, features = ["fs"] }
 

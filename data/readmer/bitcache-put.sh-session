@@ -23,7 +23,10 @@ Options:
           - hex:    Hexadecimal (aka Base16)
           - base58: Base58
 
-          [default: hex]
+      --compress <SCHEME>
+          The compression scheme for physically storing the blob(s).
+
+          One of `none`, `xz`, `xz:fast`, or `xz:best` (`xz` is an alias for `xz:fast`). Defaults to the `compress` directive of the `[bitcache.put]` config section, or else `none`.
 
   -d, --debug
           Enable debugging output

@@ -65,6 +65,41 @@ pub trait Repository: Send + Sync {
     /// Fetches the blob with the given ID, if present.
     fn get(&self, id: &Id) -> impl Future<Output = Result<Option<Blob>, Self::Error>> + Send;
 
+    /// Fetches the blob with the given ID, writing its contents to the file
+    /// at the given path (creating or replacing it).
+    ///
+    /// Returns `true` if the blob was found and written, or `false` if no
+    /// blob with the given ID was present (in which case no file is
+    /// written).
+    ///
+    /// Passing a path (rather than receiving the contents) lets repository
+    /// backends use filesystem shortcuts where possible: for example, the
+    /// filesystem backend reflinks uncompressed blobs to the destination on
+    /// filesystems that support it, avoiding a data copy entirely.
+    #[cfg(feature = "std")]
+    fn get_to_path(
+        &self,
+        id: &Id,
+        path: &std::path::Path,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send
+    where
+        Self::Error: From<std::io::Error>,
+    {
+        async move {
+            let Some(blob) = self.get(id).await? else {
+                return Ok(false);
+            };
+            let data = blob.read().into_bytes();
+            // Write asynchronously when built with Tokio; otherwise fall
+            // back to a blocking write, keeping this default runtime-agnostic.
+            #[cfg(feature = "tokio")]
+            tokio::fs::write(path, &data).await?;
+            #[cfg(not(feature = "tokio"))]
+            std::fs::write(path, &data)?;
+            Ok(true)
+        }
+    }
+
     /// Returns the size in bytes of the blob with the given ID, if present.
     fn get_len(&self, id: &Id) -> impl Future<Output = Result<Option<u64>, Self::Error>> + Send {
         async { Ok(self.get(id).await?.map(|blob| blob.len())) }

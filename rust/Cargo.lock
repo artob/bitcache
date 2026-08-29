@@ -536,6 +536,7 @@ dependencies = [
  "clientele",
  "color-print",
  "ctor",
+ "data-encoding",
  "distrib",
  "thiserror 2.0.20",
  "tokio",

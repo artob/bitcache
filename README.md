@@ -125,23 +125,26 @@ Bitcache is a distributed content-addressable storage (CAS) system.
 Usage: bitcache [OPTIONS] [COMMAND]
 
 General commands:
-  id      Compute the BLAKE3 hash of the given file(s)
-  help    Print this message or the help of the given subcommand(s)
+  id       Compute the BLAKE3 hash of the given file(s), or of stdin
+  help     Print this message or the help of the given subcommand(s)
 
 Current repository commands (`$BITCACHE_URL`, default `./.bitcache/`):
-  init    Initialize a new repository in `./.bitcache/`
-  list    List the IDs of the blobs in the repository, in ascending order
-  has     Check whether the repository contains blob(s) with the given ID(s)
-  get     Fetch blob(s) from the repository, writing their contents to stdout
-  put     Store the given file(s) into the repository as blob(s)
-  rm      Remove blob(s) with the given ID(s) from the repository
-  clear   Remove all blobs from the repository
-  export  Export all blobs in the repository into a tarball
+  init     Initialize a new repository in `./.bitcache/`
+  list     List the IDs of the blobs in the repository, in ascending order
+  has      Check whether the repository contains blob(s) with the given ID(s)
+  get      Fetch blob(s) from the repository, writing their contents to stdout
+  put      Store the given file(s) into the repository as blob(s)
+  rm       Remove blob(s) with the given ID(s) from the repository
+  clear    Remove all blobs from the repository
+  export   Export all blobs in the repository into a tarball
 
 Remote repository commands:
-  push    Copy blobs missing from the given remote repositories to them
-  pull    Copy blobs missing from the current repository from the given remotes
-  sync    Synchronize with the given remote repositories, in both directions
+  push     Copy blobs missing from the given remote repositories to them
+  pull     Copy blobs missing from the current repository from the given remotes
+  sync     Synchronize with the given remote repositories, in both directions
+
+Other commands:
+  compact  Compact the repository's physical storage
 
 Options::
       --color <COLOR>
@@ -167,6 +170,7 @@ Options::
 ```
 
 - [`bitcache clear`](#bitcache-clear) - Remove all blobs from the repository
+- [`bitcache compact`](#bitcache-compact) - Compact the repository's physical storage
 - [`bitcache export`](#bitcache-export) - Export all blobs in the repository into a tarball
 - [`bitcache get`](#bitcache-get) - Fetch blob(s) from the repository, writing their contents to stdout
 - [`bitcache has`](#bitcache-has) - Check whether the repository contains blob(s) with the given ID(s)
@@ -209,35 +213,15 @@ Options:
           Print help (see a summary with '-h')
 ```
 
-#### `bitcache export`
+#### `bitcache compact`
 
 ```shellsession
-$ bitcache export --help
-Export all blobs in the repository into a tarball
+$ bitcache compact --help
+Compact the repository's physical storage.
 
-Usage: bitcache export [OPTIONS] --output <FILE>
+Filesystem repositories rewrite stored blobs using the requested compression scheme and clean up orphaned temporary artifacts. Other repository backends may perform no maintenance.
 
-Options:
-      --color <COLOR>  Set the color output mode [default: auto] [possible values: auto, always, never]
-  -o, --output <FILE>  The path to the tarball file to create
-  -d, --debug          Enable debugging output
-  -v, --verbose...     Enable verbose output (may be repeated for more verbosity)
-  -h, --help           Print help
-```
-
-#### `bitcache get`
-
-```shellsession
-$ bitcache get --help
-Fetch blob(s) from the repository, writing their contents to stdout.
-
-Exits with a nonzero status unless all of the given blobs were found in the repository.
-
-Usage: bitcache get [OPTIONS] [IDS]...
-
-Arguments:
-  [IDS]...
-          The IDs of the blob(s) to fetch
+Usage: bitcache compact [OPTIONS]
 
 Options:
       --color <COLOR>
@@ -246,8 +230,93 @@ Options:
           [default: auto]
           [possible values: auto, always, never]
 
+      --compress <SCHEME>
+          The target compression scheme for stored blobs.
+
+          One of `none`, `xz`, `xz:fast`, or `xz:best` (`xz` is an alias for `xz:fast`). Defaults to the `compress` directive of the `[bitcache.compact]` config section, or else `xz`.
+
   -d, --debug
           Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache export`
+
+```shellsession
+$ bitcache export --help
+Export all blobs in the repository into a tarball.
+
+Without `--output`, the tar stream is written to stdout, so it can be piped to `xz`, `bzip2`, `gzip`, etc.
+
+Usage: bitcache export [OPTIONS]
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -o, --output <FILE>
+          The path to the tarball file to create (default: stdout)
+
+  -d, --debug
+          Enable debugging output
+
+  -v, --verbose...
+          Enable verbose output (may be repeated for more verbosity)
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+#### `bitcache get`
+
+```shellsession
+$ bitcache get --help
+Fetch blob(s) from the repository, writing their contents to stdout.
+
+IDs may be given as unambiguous hexadecimal prefixes: each prefix resolves to the first matching blob ID in the repository.
+
+Exits with a nonzero status unless all of the given blobs were found in the repository.
+
+Usage: bitcache get [OPTIONS] [IDS]...
+
+Arguments:
+  [IDS]...
+          The IDs (or unambiguous ID prefixes) of the blob(s) to fetch
+
+Options:
+      --color <COLOR>
+          Set the color output mode
+
+          [default: auto]
+          [possible values: auto, always, never]
+
+  -n, --lines <COUNT>
+          Print only the first COUNT lines of each blob
+
+  -d, --debug
+          Enable debugging output
+
+  -f, --format <FORMAT>
+          The output format: `raw` (the default) or `base64`
+
+          Possible values:
+          - raw:    The blob's raw contents
+          - base64: ASCII-armored (Base64-encoded) contents, one line per blob
+
+          [default: raw]
+
+  -o, --output <FILE>
+          Write the output to this file instead of stdout.
+
+          With a single blob, raw output, and no line limit, filesystem repositories reflink uncompressed blobs to the output file on supporting filesystems, avoiding a data copy.
 
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
@@ -293,15 +362,15 @@ Options:
 
 ```shellsession
 $ bitcache id --help
-Compute the BLAKE3 hash of the given file(s).
+Compute the BLAKE3 hash of the given file(s), or of stdin.
 
-Prints the ID each file would have as a blob, one per line, without accessing or modifying any repository.
+Prints the ID each file would have as a blob, one per line, without accessing or modifying any repository. With no files (or with `-`), reads from standard input.
 
 Usage: bitcache id [OPTIONS] [FILES]...
 
 Arguments:
   [FILES]...
-          The paths to the file(s) to hash
+          The paths to the file(s) to hash (`-` or none for stdin)
 
 Options:
       --color <COLOR>
@@ -316,8 +385,6 @@ Options:
           Possible values:
           - hex:    Hexadecimal (aka Base16)
           - base58: Base58
-
-          [default: hex]
 
   -d, --debug
           Enable debugging output
@@ -335,7 +402,8 @@ Options:
 $ bitcache init --help
 Initialize a new repository in `./.bitcache/`.
 
-Creates an empty repository in the `./.bitcache/` directory of the current working directory; `$BITCACHE_URL` is ignored.
+Creates an empty repository in the `./.bitcache/` directory of the current working directory; `$BITCACHE_URL` is ignored. The given options are recorded in the created `.bitcache/config.toml`; an existing
+configuration file is never overwritten.
 
 Usage: bitcache init [OPTIONS]
 
@@ -346,11 +414,29 @@ Options:
           [default: auto]
           [possible values: auto, always, never]
 
+      --hashing <ALGORITHM>
+          The content-hashing algorithm to use (only `blake3`)
+
+      --capacity <COUNT>
+          A capacity hint for how many blobs will be stored.
+
+          A count with an optional `K`, `M`, `B`, or `T` suffix (e.g., `100M` for one hundred million).
+
   -d, --debug
           Enable debugging output
 
+      --encoding <FORMAT>
+          The default encoding for displaying blob IDs
+
+          Possible values:
+          - hex:    Hexadecimal (aka Base16)
+          - base58: Base58
+
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
+
+      --without-git
+          Skip creating the `.gitattributes` and `.gitignore` files
 
   -h, --help
           Print help (see a summary with '-h')
@@ -365,7 +451,11 @@ List the IDs of the blobs in the repository, in ascending order.
 With `--verbose` (repeatable), appends further tab-separated columns to each line: the blob's byte size, media type, creation timestamp, last-update timestamp, last-access timestamp, and expiration
 timestamp.
 
-Usage: bitcache list [OPTIONS]
+Usage: bitcache list [OPTIONS] [PREFIX]
+
+Arguments:
+  [PREFIX]
+          List only IDs whose hexadecimal encoding begins with this prefix
 
 Options:
       --color <COLOR>
@@ -381,16 +471,11 @@ Options:
           - hex:    Hexadecimal (aka Base16)
           - base58: Base58
 
-          [default: hex]
+  -a, --after <ID>
+          List only IDs ordered strictly after this one
 
   -d, --debug
           Enable debugging output
-
-  -p, --prefix <PREFIX>
-          List only IDs whose hexadecimal encoding begins with this prefix
-
-  -a, --after <ID>
-          List only IDs ordered strictly after this one
 
   -n, --limit <COUNT>
           List at most this many IDs
@@ -492,7 +577,10 @@ Options:
           - hex:    Hexadecimal (aka Base16)
           - base58: Base58
 
-          [default: hex]
+      --compress <SCHEME>
+          The compression scheme for physically storing the blob(s).
+
+          One of `none`, `xz`, `xz:fast`, or `xz:best` (`xz` is an alias for `xz:fast`). Defaults to the `compress` directive of the `[bitcache.put]` config section, or else `none`.
 
   -d, --debug
           Enable debugging output
@@ -575,6 +663,8 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 ```
+
+### Configuration File
 
 ### Storage Adapters
 

@@ -110,6 +110,7 @@ bundle add bitcache
 {% render 'data/readmer/bitcache.sh-session' %}
 
 - [`bitcache clear`](#bitcache-clear) - Remove all blobs from the repository
+- [`bitcache compact`](#bitcache-compact) - Compact the repository's physical storage
 - [`bitcache export`](#bitcache-export) - Export all blobs in the repository into a tarball
 - [`bitcache get`](#bitcache-get) - Fetch blob(s) from the repository, writing their contents to stdout
 - [`bitcache has`](#bitcache-has) - Check whether the repository contains blob(s) with the given ID(s)
@@ -125,6 +126,10 @@ bundle add bitcache
 #### `bitcache clear`
 
 {% render 'data/readmer/bitcache-clear.sh-session' %}
+
+#### `bitcache compact`
+
+{% render 'data/readmer/bitcache-compact.sh-session' %}
 
 #### `bitcache export`
 
@@ -169,6 +174,8 @@ bundle add bitcache
 #### `bitcache sync`
 
 {% render 'data/readmer/bitcache-sync.sh-session' %}
+
+### Configuration File
 
 ### Storage Adapters
 

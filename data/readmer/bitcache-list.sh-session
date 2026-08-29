@@ -4,7 +4,11 @@ List the IDs of the blobs in the repository, in ascending order.
 With `--verbose` (repeatable), appends further tab-separated columns to each line: the blob's byte size, media type, creation timestamp, last-update timestamp, last-access timestamp, and expiration
 timestamp.
 
-Usage: bitcache list [OPTIONS]
+Usage: bitcache list [OPTIONS] [PREFIX]
+
+Arguments:
+  [PREFIX]
+          List only IDs whose hexadecimal encoding begins with this prefix
 
 Options:
       --color <COLOR>
@@ -20,16 +24,11 @@ Options:
           - hex:    Hexadecimal (aka Base16)
           - base58: Base58
 
-          [default: hex]
+  -a, --after <ID>
+          List only IDs ordered strictly after this one
 
   -d, --debug
           Enable debugging output
-
-  -p, --prefix <PREFIX>
-          List only IDs whose hexadecimal encoding begins with this prefix
-
-  -a, --after <ID>
-          List only IDs ordered strictly after this one
 
   -n, --limit <COUNT>
           List at most this many IDs
