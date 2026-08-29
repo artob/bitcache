@@ -1,6 +1,9 @@
 // This is free and unencumbered software released into the public domain.
 
-use crate::file_metadata::{self, ExtendedMetadata};
+use crate::{
+    BlobEncoding, BlobFile, Dir, Utf8Path,
+    file_metadata::{self, ExtendedMetadata},
+};
 use bitcache_core::{
     Blob, BlobMetadata, BlobMetadataCapabilities, Bytes, Id, ListOptions, ListOrder, PutOptions,
     Repository, RepositoryCapabilities, RepositoryError, Stream, futures_util::stream,
@@ -9,20 +12,14 @@ use bitcache_core::{
 use cap_std::fs_utf8::{MetadataExt, PermissionsExt};
 use cap_std::{
     ambient_authority,
-    fs_utf8::{Dir, File, OpenOptions, camino::Utf8Path},
+    fs_utf8::{File, OpenOptions},
 };
 use std::{
-    io::{Read, Write},
     path::PathBuf,
     string::{String, ToString},
     sync::atomic::{AtomicU64, Ordering},
     vec::Vec,
 };
-
-#[cfg(feature = "tokio")]
-use async_compression::tokio::bufread::XzDecoder;
-#[cfg(feature = "tokio")]
-use bitcache_core::tokio::io::{AsyncRead, BufReader};
 
 /// The buffer size used when streaming file contents.
 #[cfg(feature = "tokio")]
@@ -31,9 +28,6 @@ const BUFFER_LEN: usize = 65_536;
 /// The LZMA2 dictionary size used by liblzma's fastest (preset 0) mode.
 #[cfg(feature = "tokio")]
 const FASTEST_XZ_DICTIONARY_SIZE: u64 = 256 * 1024;
-
-#[cfg(feature = "tokio")]
-const XZ_MAGIC: &[u8; 6] = b"\xfd7zXZ\0";
 
 /// A process-local sequence used to make temporary filenames unique.
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -45,53 +39,11 @@ const SHARD_PREFIX_LEN: usize = 2;
 /// The number of shard subdirectories (`00` through `ff` for a prefix of 2).
 const SHARD_COUNT: u32 = 1 << (4 * SHARD_PREFIX_LEN as u32);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BlobEncoding {
-    Uncompressed,
-    Xz,
-}
-
 struct PhysicalBlob {
     name: String,
     file: File,
     extended: ExtendedMetadata,
     encoding: BlobEncoding,
-}
-
-/// An asynchronous reader over an uncompressed blob's contents.
-///
-/// The underlying repository file may itself be either uncompressed or XZ
-/// compressed; callers always receive the original blob bytes.
-#[cfg(feature = "tokio")]
-pub struct BlobFile(std::pin::Pin<std::boxed::Box<dyn AsyncRead + Send>>);
-
-#[cfg(feature = "tokio")]
-impl std::fmt::Debug for BlobFile {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("BlobFile").finish_non_exhaustive()
-    }
-}
-
-#[cfg(feature = "tokio")]
-impl BlobFile {
-    fn new(file: File, encoding: BlobEncoding) -> Self {
-        let file = bitcache_core::tokio::fs::File::from_std(file.into_std());
-        match encoding {
-            BlobEncoding::Uncompressed => Self(std::boxed::Box::pin(file)),
-            BlobEncoding::Xz => Self(std::boxed::Box::pin(XzDecoder::new(BufReader::new(file)))),
-        }
-    }
-}
-
-#[cfg(feature = "tokio")]
-impl AsyncRead for BlobFile {
-    fn poll_read(
-        mut self: std::pin::Pin<&mut Self>,
-        context: &mut std::task::Context<'_>,
-        buffer: &mut bitcache_core::tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        self.0.as_mut().poll_read(context, buffer)
-    }
 }
 
 /// A repository backed by a local filesystem directory.
@@ -463,6 +415,8 @@ impl FsRepository {
         metadata: &ExtendedMetadata,
         encoding: BlobEncoding,
     ) -> Result<(), RepositoryError> {
+        use std::io::{Error, ErrorKind};
+
         let uncompressed_path = Self::path(id);
         match self.0.open(&uncompressed_path) {
             Ok(existing_file) => {
@@ -472,7 +426,7 @@ impl FsRepository {
                 let _ = self.0.remove_file(temp_name);
                 return result;
             },
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) if error.kind() == ErrorKind::NotFound => (),
             Err(error) => {
                 let _ = self.0.remove_file(temp_name);
                 return Err(error.into());
@@ -490,7 +444,7 @@ impl FsRepository {
                     self.0.remove_file(temp_name)?;
                     return Ok(());
                 },
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {
                     match self.0.open(&path) {
                         Ok(existing_file) => {
                             let result = self
@@ -499,7 +453,7 @@ impl FsRepository {
                             let _ = self.0.remove_file(temp_name);
                             return result;
                         },
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                        Err(error) if error.kind() == ErrorKind::NotFound => continue,
                         Err(error) => {
                             let _ = self.0.remove_file(temp_name);
                             return Err(error.into());
@@ -513,8 +467,8 @@ impl FsRepository {
             }
         }
         let _ = self.0.remove_file(temp_name);
-        Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
+        Err(Error::new(
+            ErrorKind::NotFound,
             "blob disappeared repeatedly while being stored",
         )
         .into())
@@ -528,153 +482,32 @@ impl FsRepository {
         }
     }
 
-    #[cfg(feature = "tokio")]
-    fn read_xz_vli(data: &[u8], cursor: &mut usize, end: usize) -> std::io::Result<u64> {
-        let mut value = 0u64;
-        for index in 0..9 {
-            let byte = *data.get(*cursor).filter(|_| *cursor < end).ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "truncated XZ block header")
-            })?;
-            *cursor += 1;
-            if index == 8 && byte > 1 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "XZ variable-length integer overflow",
-                ));
-            }
-            value |= u64::from(byte & 0x7f) << (index * 7);
-            if byte & 0x80 == 0 {
-                if index > 0 && byte == 0 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "non-canonical XZ variable-length integer",
-                    ));
-                }
-                return Ok(value);
-            }
-        }
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "unterminated XZ variable-length integer",
-        ))
-    }
-
-    /// Reads the LZMA2 dictionary size from the first XZ block header.
-    #[cfg(feature = "tokio")]
-    fn xz_dictionary_size(file: &mut File) -> std::io::Result<Option<u64>> {
-        let mut stream_header = [0u8; 12];
-        file.read_exact(&mut stream_header)?;
-        if &stream_header[..XZ_MAGIC.len()] != XZ_MAGIC {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid XZ stream header",
-            ));
-        }
-
-        let mut header_size = [0u8; 1];
-        file.read_exact(&mut header_size)?;
-        if header_size[0] == 0 {
-            return Ok(None);
-        }
-        let header_len = (usize::from(header_size[0]) + 1) * 4;
-        let mut header = std::vec![0u8; header_len];
-        header[0] = header_size[0];
-        file.read_exact(&mut header[1..])?;
-
-        let end = header_len.checked_sub(4).ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid XZ block header size",
-            )
-        })?;
-        let flags = *header.get(1).ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "truncated XZ block header")
-        })?;
-        if flags & 0x3c != 0 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid XZ block flags",
-            ));
-        }
-
-        let mut cursor = 2;
-        if flags & 0x40 != 0 {
-            Self::read_xz_vli(&header, &mut cursor, end)?;
-        }
-        if flags & 0x80 != 0 {
-            Self::read_xz_vli(&header, &mut cursor, end)?;
-        }
-
-        let mut dictionary_size = None;
-        for _ in 0..=flags & 0x03 {
-            let filter_id = Self::read_xz_vli(&header, &mut cursor, end)?;
-            let properties_len = usize::try_from(Self::read_xz_vli(&header, &mut cursor, end)?)
-                .map_err(|_| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "XZ filter properties are too large",
-                    )
-                })?;
-            let properties_end = cursor.checked_add(properties_len).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "XZ filter properties overflow",
-                )
-            })?;
-            if properties_end > end {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "truncated XZ filter properties",
-                ));
-            }
-            if filter_id == 0x21 {
-                if properties_len != 1 || header[cursor] > 40 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "invalid LZMA2 dictionary property",
-                    ));
-                }
-                let property = header[cursor];
-                dictionary_size = Some(if property == 40 {
-                    u64::from(u32::MAX)
-                } else {
-                    u64::from(2 | (property & 1)) << (u32::from(property / 2) + 11)
-                });
-            }
-            cursor = properties_end;
-        }
-        if header[cursor..end].iter().any(|byte| *byte != 0) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "invalid XZ block header padding",
-            ));
-        }
-        Ok(dictionary_size)
-    }
-
     /// Selects a blob that needs maximum XZ recompression.
     #[cfg(feature = "tokio")]
     fn compact_source(
         &self,
         id: &Id,
     ) -> Result<Option<(BlobEncoding, cap_std::fs::Metadata)>, RepositoryError> {
+        use crate::util::read_xz_dict_size;
+        use std::io::ErrorKind;
+
         match self.0.open(Self::path(id)) {
             Ok(file) => {
                 let metadata = file.metadata()?;
                 return Ok(Some((BlobEncoding::Uncompressed, metadata)));
             },
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) if error.kind() == ErrorKind::NotFound => (),
             Err(error) => return Err(error.into()),
         }
 
         let mut file = match self.0.open(Self::compressed_path(id)) {
             Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.into()),
         };
         let metadata = file.metadata()?;
         Ok(
-            (Self::xz_dictionary_size(&mut file)? == Some(FASTEST_XZ_DICTIONARY_SIZE))
+            (read_xz_dict_size(&mut file)? == Some(FASTEST_XZ_DICTIONARY_SIZE))
                 .then_some((BlobEncoding::Xz, metadata)),
         )
     }
@@ -684,6 +517,8 @@ impl FsRepository {
     async fn compact_blob(&self, id: &Id) -> Result<(), RepositoryError> {
         use async_compression::{Level, tokio::write::XzEncoder};
         use bitcache_core::tokio::{fs::File, io::AsyncWriteExt};
+
+        std::eprintln!("Compacting {}...", id);
 
         let Some((source_encoding, source_metadata)) = self.compact_source(id)? else {
             return Ok(());
@@ -855,7 +690,7 @@ impl FsRepository {
         let mut input_file = File::open(input_path.as_ref()).await?;
         let (temp_name, temp_file) = self.create_temp_file()?;
         let temp_file = File::from_std(temp_file.into_std());
-        let mut encoder = XzEncoder::with_quality(temp_file, Level::Fastest);
+        let mut encoder = XzEncoder::with_quality(temp_file, Level::Best);
 
         let result: Result<Id, RepositoryError> = async {
             let mut hasher = Hasher::new();
@@ -918,7 +753,7 @@ impl FsRepository {
             use bitcache_core::tokio::{fs::File, io::AsyncWriteExt};
 
             let temp_file = File::from_std(temp_file.into_std());
-            let mut encoder = XzEncoder::with_quality(temp_file, Level::Fastest);
+            let mut encoder = XzEncoder::with_quality(temp_file, Level::Best);
             let result = async {
                 encoder.write_all(&data).await?;
                 encoder.shutdown().await?;
