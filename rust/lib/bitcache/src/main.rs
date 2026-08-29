@@ -1,8 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache::{
-    CompactOptions, Compression, Config, DynRepository, Id, IdEncoding, ListOptions, ListOrder,
-    PutOptions, Repository, RepositoryError, futures_util::StreamExt,
+    CONFIG_HEADER, CompactOptions, Compression, Config, DynRepository, Id, IdEncoding, ListOptions,
+    ListOrder, PutOptions, Repository, RepositoryError, futures_util::StreamExt,
 };
 use clientele::{
     ColorChoiceExt, StandardOptions, SysexitsError,
@@ -403,7 +403,11 @@ pub async fn main() -> Result<(), SysexitsError> {
         Command::Id { format, paths } => {
             let format = format.unwrap_or(default_format);
             let stdin = PathBuf::from("-");
-            let paths = if paths.is_empty() { vec![stdin.clone()] } else { paths };
+            let paths = if paths.is_empty() {
+                vec![stdin.clone()]
+            } else {
+                paths
+            };
             for path in paths {
                 let id = if path == stdin {
                     bitcache_core::sync::identify_input(std::io::stdin().lock())?
@@ -430,10 +434,11 @@ pub async fn main() -> Result<(), SysexitsError> {
                 config.bitcache.hashing = hashing.unwrap_or_default();
                 config.bitcache.capacity = capacity;
                 config.bitcache.encoding = encoding;
-                let toml = config.to_toml().map_err(|error| {
+                let mut toml = config.to_toml().map_err(|error| {
                     eprintln!("bitcache: {}", error);
                     SysexitsError::EX_SOFTWARE
                 })?;
+                toml.insert_str(0, CONFIG_HEADER);
                 std::fs::write(CONFIG_PATH, toml)?;
             }
             Ok(())

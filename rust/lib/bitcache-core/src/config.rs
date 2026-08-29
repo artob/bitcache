@@ -38,6 +38,8 @@ pub const CONFIG_FILE_NAME: &str = "config.toml";
 /// The current configuration format version: the major version of this crate.
 pub const CONFIG_VERSION: u64 = parse_major(env!("CARGO_PKG_VERSION_MAJOR"));
 
+pub const CONFIG_HEADER: &str = "# See: https://bitcache.dev/#configuration-file\n\n";
+
 /// The default configuration file contents.
 pub const DEFAULT_CONFIG_TOML: &str = "[bitcache]\nversion = 0\nhashing = \"blake3\"\n";
 
@@ -365,6 +367,8 @@ mod tests {
     fn full_config_parses() {
         let config = Config::parse(
             r#"
+            # See: https://bitcache.dev/#configuration-file
+
             [bitcache]
             version = 0
             hashing = "blake3"
