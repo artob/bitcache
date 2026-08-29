@@ -575,6 +575,7 @@ dependencies = [
  "bitcache-core",
  "cap-std",
  "fsquirrel",
+ "rustix 1.1.4",
  "tokio",
  "xattr",
 ]

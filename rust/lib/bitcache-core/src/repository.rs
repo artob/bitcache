@@ -120,6 +120,36 @@ pub trait Repository: Send + Sync {
         self.put_with_options(data, PutOptions::new().with_ttl(ttl))
     }
 
+    /// Stores the file at the given path as a blob, returning its
+    /// content-derived ID.
+    ///
+    /// Passing the path (rather than the file's contents) lets repository
+    /// backends use filesystem shortcuts where possible: for example, the
+    /// filesystem backend reflinks the file into the repository on
+    /// filesystems that support it, avoiding a data copy entirely.
+    ///
+    /// The default implementation reads the whole file into memory and
+    /// delegates to [`Repository::put_with_options`].
+    #[cfg(feature = "std")]
+    fn put_from_path(
+        &mut self,
+        path: &std::path::Path,
+        options: PutOptions,
+    ) -> impl Future<Output = Result<Id, Self::Error>> + Send
+    where
+        Self::Error: From<std::io::Error>,
+    {
+        async move {
+            // Read asynchronously when built with Tokio; otherwise fall back
+            // to a blocking read, keeping this default runtime-agnostic.
+            #[cfg(feature = "tokio")]
+            let data = tokio::fs::read(path).await?;
+            #[cfg(not(feature = "tokio"))]
+            let data = std::fs::read(path)?;
+            self.put_with_options(Bytes::from(data), options).await
+        }
+    }
+
     /// Removes the blob with the given ID, if present.
     ///
     /// Returns `true` if a blob was removed, or `false` if no blob with the

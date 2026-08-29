@@ -120,6 +120,53 @@ fn assert_same_file_except_ctime(before: &fs::Metadata, after: &fs::Metadata) {
 }
 
 #[tokio::test]
+async fn test_uncompressed_put_file_stores_blob_and_metadata() {
+    // On reflink-capable filesystems (APFS, Btrfs, XFS), this exercises the
+    // clone fast path; elsewhere, the streaming fallback. Behavior must be
+    // identical either way.
+    let temp_dir = TestDir::new();
+    let repository_path = temp_dir.path().join("repository");
+    let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    let data = b"uncompressed reflinked blob\n".repeat(4_096);
+    let input = temp_dir.path().join("input.bin");
+    fs::write(&input, &data).unwrap();
+
+    let options = PutOptions::new()
+        .with_compression(Compression::None)
+        .with_media_type(Some("application/octet-stream".into()));
+    let id = repository
+        .put_file_with_options(&input, options.clone())
+        .await
+        .unwrap();
+    assert_eq!(id, Id::of(&data));
+
+    // Stored uncompressed, read-only, with metadata, and correct contents:
+    let path = uncompressed_blob_path(&repository_path, &id);
+    assert!(path.exists());
+    assert!(!blob_path(&repository_path, &id).exists());
+    assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o444);
+    let blob = repository.get(&id).await.unwrap().unwrap();
+    assert_eq!(blob.read().into_bytes(), Bytes::from(data.clone()));
+    assert_eq!(
+        blob.metadata().media_type(),
+        Some("application/octet-stream")
+    );
+
+    // Re-inserting the same contents must not replace the existing blob:
+    let before = fs::metadata(&path).unwrap();
+    let duplicate = repository
+        .put_file_with_options(&input, options)
+        .await
+        .unwrap();
+    assert_eq!(duplicate, id);
+    assert_eq!(fs::metadata(&path).unwrap().ino(), before.ino());
+
+    // The source file is unaffected:
+    assert_eq!(fs::read(&input).unwrap(), data);
+    assert!(fs::metadata(&input).unwrap().permissions().mode() & 0o200 != 0);
+}
+
+#[tokio::test]
 async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
     let temp_dir = TestDir::new();
     let repository_path = temp_dir.path().join("repository");

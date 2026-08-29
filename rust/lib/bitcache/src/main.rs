@@ -484,9 +484,9 @@ pub async fn main() -> Result<(), SysexitsError> {
                 return Err(SysexitsError::EX_UNAVAILABLE);
             }
             for path in paths {
-                let buffer = tokio::fs::read(&path).await?;
-                let bytes = Bytes::from(buffer);
-                let id = repository.put_with_options(bytes, options.clone()).await?;
+                let id = repository
+                    .put_from_path(&path, options.clone())
+                    .await?;
                 println!("{}", format_id(&id, format));
             }
             Ok(())

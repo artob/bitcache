@@ -37,6 +37,7 @@ bitcache-core = { workspace = true, features = ["cap-std", "clientele"] }
 cap-std = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
+rustix = { version = "1", default-features = false, features = ["fs", "std"] }
 xattr = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]

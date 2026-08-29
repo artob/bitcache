@@ -702,9 +702,107 @@ impl FsRepository {
             .await
     }
 
+    /// Clones the given source file into a temporary file via a reflink
+    /// (copy-on-write clone), without copying any data.
+    ///
+    /// Returns `None` if the filesystem doesn't support reflinks or the
+    /// source resides on a different volume; the caller should fall back to
+    /// a regular copy.
+    #[cfg(all(feature = "tokio", target_os = "linux"))]
+    fn reflink_temp(&self, source: &std::fs::File) -> Option<(String, File)> {
+        let (temp_name, temp_file) = self.create_temp_file().ok()?;
+        match rustix::fs::ioctl_ficlone(&temp_file, source) {
+            Ok(()) => Some((temp_name, temp_file)),
+            Err(_) => {
+                drop(temp_file);
+                let _ = self.0.remove_file(&temp_name);
+                None
+            },
+        }
+    }
+
+    /// Clones the given source file into a temporary file via `clonefile`
+    /// (copy-on-write clone), without copying any data.
+    ///
+    /// Returns `None` if the filesystem doesn't support cloning or the
+    /// source resides on a different volume; the caller should fall back to
+    /// a regular copy.
+    #[cfg(all(feature = "tokio", target_vendor = "apple"))]
+    fn reflink_temp(&self, source: &std::fs::File) -> Option<(String, File)> {
+        use rustix::fs::CloneFlags;
+
+        loop {
+            let sequence = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+            let name = std::format!("{}put-{}-{}", TEMP_PREFIX, std::process::id(), sequence);
+            match rustix::fs::fclonefileat(source, &self.0, name.as_str(), CloneFlags::empty()) {
+                Ok(()) => return self.0.open(&name).ok().map(|file| (name, file)),
+                Err(rustix::io::Errno::EXIST) => continue,
+                Err(_) => return None,
+            }
+        }
+    }
+
+    /// Reflinks are not supported on this platform.
+    #[cfg(all(feature = "tokio", not(any(target_os = "linux", target_vendor = "apple"))))]
+    fn reflink_temp(&self, _source: &std::fs::File) -> Option<(String, File)> {
+        None
+    }
+
+    /// Attempts to store the file at the given path as an uncompressed blob
+    /// by reflinking it into the repository, avoiding a data copy.
+    ///
+    /// Returns `Ok(None)` if reflinking isn't possible (unsupported
+    /// filesystem, different volume, etc.), in which case the caller should
+    /// fall back to a regular copy. The blob ID is computed from the cloned
+    /// file, so a concurrently modified source can't corrupt the store.
+    #[cfg(feature = "tokio")]
+    fn try_put_file_reflinked(
+        &mut self,
+        path: &std::path::Path,
+        metadata: &ExtendedMetadata,
+    ) -> Result<Option<Id>, RepositoryError> {
+        let Ok(source) = std::fs::File::open(path) else {
+            return Ok(None); // let the fallback path surface the error
+        };
+        let Some((temp_name, temp_file)) = self.reflink_temp(&source) else {
+            return Ok(None);
+        };
+        drop(source);
+
+        let result: Result<Id, RepositoryError> = (|| {
+            // The clone inherits the source's permissions; ensure that the
+            // temporary file is writable for the metadata to be attached.
+            let mut permissions = temp_file.metadata()?.permissions();
+            #[cfg(unix)]
+            permissions.set_mode(0o644);
+            #[cfg(not(unix))]
+            permissions.set_readonly(false);
+            temp_file.set_permissions(permissions)?;
+
+            let id = bitcache_core::sync::identify_input(&temp_file)?;
+            self.prepare_temp(&temp_name, &temp_file, metadata)?;
+            Ok(id)
+        })();
+
+        drop(temp_file);
+        match result {
+            Ok(id) => {
+                self.publish_temp(&temp_name, &id, metadata, BlobEncoding::Uncompressed)?;
+                Ok(Some(id))
+            },
+            Err(error) => {
+                let _ = self.0.remove_file(&temp_name);
+                Err(error)
+            },
+        }
+    }
+
     /// Stores the file at the given path as a blob with metadata options.
     ///
-    /// Contents are streamed in one pass and published with a hard link, so an
+    /// When storing uncompressed on a filesystem that supports reflinks
+    /// (copy-on-write clones), the file is cloned into the repository
+    /// without copying its data. Otherwise, contents are streamed in one
+    /// pass. Either way, the blob is published with a hard link, so an
     /// existing blob is never overwritten or replaced.
     #[cfg(feature = "tokio")]
     pub async fn put_file_with_options(
@@ -730,6 +828,11 @@ impl FsRepository {
             options.expires_nanos(),
             options.media_type().map(ToString::to_string),
         );
+        if compression == Compression::None
+            && let Some(id) = self.try_put_file_reflinked(input_path.as_ref(), &metadata)?
+        {
+            return Ok(id);
+        }
         let mut input_file = File::open(input_path.as_ref()).await?;
         let (temp_name, temp_file) = self.create_temp_file()?;
         let temp_file = File::from_std(temp_file.into_std());
@@ -1002,6 +1105,15 @@ impl Repository for FsRepository {
         options: PutOptions,
     ) -> Result<Id, Self::Error> {
         self.store_bytes(data, options).await
+    }
+
+    #[cfg(feature = "tokio")]
+    async fn put_from_path(
+        &mut self,
+        path: &std::path::Path,
+        options: PutOptions,
+    ) -> Result<Id, Self::Error> {
+        self.put_file_with_options(path, options).await
     }
 
     async fn remove(&mut self, id: &Id) -> Result<bool, Self::Error> {
