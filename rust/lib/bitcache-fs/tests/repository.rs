@@ -128,6 +128,10 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
         fs::read_to_string(repository_path.join(".gitattributes")).unwrap(),
         "blobs/** binary\n"
     );
+    assert_eq!(
+        fs::read_to_string(repository_path.join(".gitignore")).unwrap(),
+        ".tmp-*\n"
+    );
     let metadata_capabilities = repository.capabilities().blob_metadata();
     assert!(metadata_capabilities.created());
     assert!(metadata_capabilities.updated());
@@ -213,7 +217,7 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
             .unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with(".put-")
+            .starts_with(".tmp-")
     }));
 }
 
@@ -324,7 +328,7 @@ async fn test_compact_compresses_uncompressed_blobs() {
             .unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with(".put-")
+            .starts_with(".tmp-")
     }));
 
     repository.compact().await.unwrap();
@@ -467,14 +471,14 @@ async fn test_expired_blobs_are_absent_but_clear_removes_them() {
     repository.clear().await.unwrap();
     assert!(!path.exists());
     // The blobs directory is recreated after an atomic clear, and no
-    // detached `.blobs.clear-*` trees are left behind:
+    // detached `.tmp-clear-*` trees are left behind:
     assert!(repository_path.join("blobs").is_dir());
     assert!(fs::read_dir(&repository_path).unwrap().all(|entry| {
         !entry
             .unwrap()
             .file_name()
             .to_string_lossy()
-            .starts_with(".blobs.clear-")
+            .starts_with(".tmp-")
     }));
 }
 

@@ -36,6 +36,14 @@ const FASTEST_XZ_DICTIONARY_SIZE: u64 = 256 * 1024;
 /// A process-local sequence used to make temporary filenames unique.
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
+/// The common prefix of all temporary artifacts at the repository root
+/// (`.tmp-put-*` files, `.tmp-clear-*` directories), so that an admin can
+/// locate and delete them all with a single `.tmp-*` wildcard.
+const TEMP_PREFIX: &str = ".tmp-";
+
+/// The minimum age at which a temporary file is considered orphaned.
+const TEMP_ORPHAN_TTL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
 /// The name of the Git attributes file created at the repository root.
 const GIT_ATTRIBUTES_NAME: &str = ".gitattributes";
 
@@ -46,6 +54,13 @@ const GIT_ATTRIBUTES_NAME: &str = ".gitattributes";
 /// support lands, this is where blobs will be routed through the
 /// appropriate filter (e.g., `blobs/** filter=lfs diff=lfs merge=lfs -text`).
 const GIT_ATTRIBUTES: &str = "blobs/** binary\n";
+
+/// The name of the Git ignore file created at the repository root.
+const GIT_IGNORE_NAME: &str = ".gitignore";
+
+/// The contents of the Git ignore file created at the repository root:
+/// temporary artifacts must never be committed.
+const GIT_IGNORE: &str = ".tmp-*\n";
 
 struct PhysicalBlob {
     name: String,
@@ -65,6 +80,7 @@ struct PhysicalBlob {
 /// ```text
 /// .bitcache/
 /// ├── .gitattributes
+/// ├── .gitignore
 /// └── blobs/
 ///     └── ab/
 ///         └── abcdef….xz
@@ -88,9 +104,10 @@ pub struct FsRepository(Dir, RepositoryCapabilities, #[cfg(windows)] PathBuf);
 impl FsRepository {
     /// Creates or opens a new repository at the given directory path.
     ///
-    /// Ensures that the `blobs` subdirectory exists and that a default
-    /// `.gitattributes` file (marking blobs as binary) is present; an
-    /// existing `.gitattributes` file is never overwritten.
+    /// Ensures that the `blobs` subdirectory exists and that default
+    /// `.gitattributes` (marking blobs as binary) and `.gitignore` (ignoring
+    /// temporary artifacts) files are present; existing files are never
+    /// overwritten.
     pub fn create(path: impl AsRef<Utf8Path>) -> Result<Self, RepositoryError> {
         let path = path.as_ref();
         let dir = match Dir::open_ambient_dir(path, ambient_authority()) {
@@ -102,7 +119,8 @@ impl FsRepository {
             Err(error) => return Err(error.into()),
         };
         dir.create_dir_all(BLOBS_DIR)?;
-        Self::create_git_attributes(&dir)?;
+        Self::create_file_if_absent(&dir, GIT_ATTRIBUTES_NAME, GIT_ATTRIBUTES)?;
+        Self::create_file_if_absent(&dir, GIT_IGNORE_NAME, GIT_IGNORE)?;
         Self::from_dir(path, dir)
     }
 
@@ -131,14 +149,14 @@ impl FsRepository {
         Ok(repository)
     }
 
-    /// Writes the default `.gitattributes` file if it doesn't already exist.
-    fn create_git_attributes(dir: &Dir) -> Result<(), RepositoryError> {
+    /// Writes a repository metadata file if it doesn't already exist.
+    fn create_file_if_absent(dir: &Dir, name: &str, contents: &str) -> Result<(), RepositoryError> {
         use std::io::Write;
 
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
-        match dir.open_with(GIT_ATTRIBUTES_NAME, &options) {
-            Ok(mut file) => Ok(file.write_all(GIT_ATTRIBUTES.as_bytes())?),
+        match dir.open_with(name, &options) {
+            Ok(mut file) => Ok(file.write_all(contents.as_bytes())?),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
             Err(error) => Err(error.into()),
         }
@@ -389,7 +407,7 @@ impl FsRepository {
 
         loop {
             let sequence = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-            let name = std::format!(".put-{}-{}.tmp", std::process::id(), sequence);
+            let name = std::format!("{}put-{}-{}", TEMP_PREFIX, std::process::id(), sequence);
             match self.0.open_with(&name, &options) {
                 Ok(file) => return Ok((name, file)),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -794,19 +812,40 @@ impl FsRepository {
         self.store_bytes(data, PutOptions::default()).await
     }
 
-    /// Best-effort removal of detached blob trees left behind by
-    /// interrupted [`Repository::clear`] calls.
-    fn remove_stale_clear_dirs(&self) {
+    /// Best-effort removal of orphaned temporary artifacts (`.tmp-*`) left
+    /// behind by interrupted operations.
+    ///
+    /// Detached `.tmp-clear-*` blob trees are always removed: once renamed
+    /// aside, deletion is their only remaining purpose. Temporary files
+    /// (e.g., in-flight `.tmp-put-*` stores) are only removed once they are
+    /// at least [`TEMP_ORPHAN_TTL`] old, so that stores by concurrent
+    /// processes are left undisturbed.
+    fn remove_stale_temp_artifacts(&self) {
         let Ok(entries) = self.0.entries() else {
             return;
         };
-        let prefix = std::format!(".{}.clear-", BLOBS_DIR);
         for entry in entries.flatten() {
             let Ok(name) = entry.file_name() else {
                 continue;
             };
-            if name.starts_with(&prefix) {
+            if !name.starts_with(TEMP_PREFIX) {
+                continue;
+            }
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
                 let _ = self.0.remove_dir_all(&name);
+            } else {
+                let orphaned = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|metadata| metadata.modified().ok())
+                    .and_then(|modified| modified.into_std().elapsed().ok())
+                    .is_some_and(|age| age >= TEMP_ORPHAN_TTL);
+                if orphaned {
+                    let _ = self.0.remove_file(&name);
+                }
             }
         }
     }
@@ -955,6 +994,10 @@ impl Repository for FsRepository {
     }
 
     async fn compact(&mut self) -> Result<(), Self::Error> {
+        // Compaction doubles as maintenance: sweep any orphaned temporary
+        // artifacts left behind by interrupted operations.
+        self.remove_stale_temp_artifacts();
+
         #[cfg(feature = "tokio")]
         {
             let mut cursor = self.cursor(false);
@@ -980,12 +1023,7 @@ impl Repository for FsRepository {
         // their pinned (renamed) generation; new operations see an empty
         // repository immediately.
         let sequence = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        let trash = std::format!(
-            ".{}.clear-{}-{}",
-            BLOBS_DIR,
-            std::process::id(),
-            sequence
-        );
+        let trash = std::format!("{}clear-{}-{}", TEMP_PREFIX, std::process::id(), sequence);
         match self.0.rename(BLOBS_DIR, &self.0, &trash) {
             Ok(()) => {
                 // Best effort: recreate an empty blobs directory right away.
@@ -1000,7 +1038,7 @@ impl Repository for FsRepository {
             },
             Err(error) => return Err(error.into()),
         }
-        self.remove_stale_clear_dirs();
+        self.remove_stale_temp_artifacts();
         Ok(())
     }
 
