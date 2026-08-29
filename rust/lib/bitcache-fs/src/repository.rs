@@ -1,10 +1,12 @@
 // This is free and unencumbered software released into the public domain.
 
 use crate::{
-    BlobEncoding, BlobFile, Dir, DirCursor, Utf8Path,
-    dir_cursor::SHARD_PREFIX_LEN,
+    BlobEncoding, Dir, DirCursor, Utf8Path,
+    dir_cursor::{BLOBS_DIR, SHARD_PREFIX_LEN},
     file_metadata::{self, ExtendedMetadata},
 };
+#[cfg(feature = "tokio")]
+use crate::BlobFile;
 use bitcache_core::{
     Blob, BlobMetadata, BlobMetadataCapabilities, Bytes, Id, ListOptions, ListOrder, PutOptions,
     Repository, RepositoryCapabilities, RepositoryError, Stream,
@@ -34,6 +36,17 @@ const FASTEST_XZ_DICTIONARY_SIZE: u64 = 256 * 1024;
 /// A process-local sequence used to make temporary filenames unique.
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
+/// The name of the Git attributes file created at the repository root.
+const GIT_ATTRIBUTES_NAME: &str = ".gitattributes";
+
+/// The contents of the Git attributes file created at the repository root.
+///
+/// Marks all blob files as binary so that Git never attempts text
+/// conversion or diffing on them. When Git LFS (or Hugging Face Xet)
+/// support lands, this is where blobs will be routed through the
+/// appropriate filter (e.g., `blobs/** filter=lfs diff=lfs merge=lfs -text`).
+const GIT_ATTRIBUTES: &str = "blobs/** binary\n";
+
 struct PhysicalBlob {
     name: String,
     file: File,
@@ -43,12 +56,25 @@ struct PhysicalBlob {
 
 /// A repository backed by a local filesystem directory.
 ///
-/// Blobs are stored in shard subdirectories named after the first
-/// [`SHARD_PREFIX_LEN`] hexadecimal characters of the blob ID (`00` through
-/// `ff` by default), created lazily as blobs are stored. Within a shard,
-/// files are named by their full
-/// hexadecimal IDs, with an `.xz` suffix when compressed. Access is
-/// capability-scoped to the directory
+/// Blobs live under a dedicated `blobs` subdirectory, sharded into
+/// subdirectories named after the first [`SHARD_PREFIX_LEN`] hexadecimal
+/// characters of the blob ID (`00` through `ff` by default) and created
+/// lazily as blobs are stored. Within a shard, files are named by their full
+/// hexadecimal IDs, with an `.xz` suffix when compressed:
+///
+/// ```text
+/// .bitcache/
+/// ├── .gitattributes
+/// └── blobs/
+///     └── ab/
+///         └── abcdef….xz
+/// ```
+///
+/// The repository root remains free for auxiliary files (configuration,
+/// Git metadata, etc.), and clearing the repository is atomic: the `blobs`
+/// directory is renamed aside and deleted offline.
+///
+/// Access is capability-scoped to the directory
 /// via [`cap_std`]. On Unix, extended
 /// metadata is also accessed through file handles. Windows extended metadata
 /// uses NTFS alternate data streams and therefore retains the canonical
@@ -61,6 +87,10 @@ pub struct FsRepository(Dir, RepositoryCapabilities, #[cfg(windows)] PathBuf);
 
 impl FsRepository {
     /// Creates or opens a new repository at the given directory path.
+    ///
+    /// Ensures that the `blobs` subdirectory exists and that a default
+    /// `.gitattributes` file (marking blobs as binary) is present; an
+    /// existing `.gitattributes` file is never overwritten.
     pub fn create(path: impl AsRef<Utf8Path>) -> Result<Self, RepositoryError> {
         let path = path.as_ref();
         let dir = match Dir::open_ambient_dir(path, ambient_authority()) {
@@ -71,6 +101,8 @@ impl FsRepository {
             },
             Err(error) => return Err(error.into()),
         };
+        dir.create_dir_all(BLOBS_DIR)?;
+        Self::create_git_attributes(&dir)?;
         Self::from_dir(path, dir)
     }
 
@@ -99,6 +131,19 @@ impl FsRepository {
         Ok(repository)
     }
 
+    /// Writes the default `.gitattributes` file if it doesn't already exist.
+    fn create_git_attributes(dir: &Dir) -> Result<(), RepositoryError> {
+        use std::io::Write;
+
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        match dir.open_with(GIT_ATTRIBUTES_NAME, &options) {
+            Ok(mut file) => Ok(file.write_all(GIT_ATTRIBUTES.as_bytes())?),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     /// Creates a cursor over the physical blobs in the repository directory.
     ///
     /// See [`DirCursor`] for ordering and memory-use guarantees.
@@ -109,14 +154,12 @@ impl FsRepository {
     /// Creates the shard subdirectory for the given blob ID if it doesn't
     /// already exist.
     ///
-    /// Shard subdirectories are created lazily, on first store of a blob
-    /// whose ID falls within the shard.
+    /// Shard subdirectories (and the `blobs` directory itself, e.g., after
+    /// an atomic clear) are created lazily, on first store of a blob whose
+    /// ID falls within the shard.
     fn ensure_shard_dir(&self, id: &Id) -> Result<(), RepositoryError> {
-        match self.0.create_dir(Self::shard_name(id)) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
-            Err(error) => Err(error.into()),
-        }
+        let path = std::format!("{}/{}", BLOBS_DIR, Self::shard_name(id));
+        Ok(self.0.create_dir_all(path)?)
     }
 
     /// The shard subdirectory name for the blob with the given ID.
@@ -129,14 +172,14 @@ impl FsRepository {
     fn path(id: &Id) -> String {
         let hex = id.to_hex();
         let hex = hex.as_str();
-        std::format!("{}/{}", &hex[..SHARD_PREFIX_LEN], hex)
+        std::format!("{}/{}/{}", BLOBS_DIR, &hex[..SHARD_PREFIX_LEN], hex)
     }
 
     /// The compressed storage path for the blob with the given ID.
     fn compressed_path(id: &Id) -> String {
         let hex = id.to_hex();
         let hex = hex.as_str();
-        std::format!("{}/{}.xz", &hex[..SHARD_PREFIX_LEN], hex)
+        std::format!("{}/{}/{}.xz", BLOBS_DIR, &hex[..SHARD_PREFIX_LEN], hex)
     }
 
     fn path_for(id: &Id, encoding: BlobEncoding) -> String {
@@ -711,6 +754,8 @@ impl FsRepository {
 
         #[cfg(not(feature = "tokio"))]
         let (result, encoding) = {
+            use std::io::Write;
+
             let mut temp_file = temp_file;
             (
                 temp_file.write_all(&data).map_err(RepositoryError::from),
@@ -748,6 +793,23 @@ impl FsRepository {
     pub async fn put(&mut self, data: Bytes) -> Result<Id, RepositoryError> {
         self.store_bytes(data, PutOptions::default()).await
     }
+
+    /// Best-effort removal of detached blob trees left behind by
+    /// interrupted [`Repository::clear`] calls.
+    fn remove_stale_clear_dirs(&self) {
+        let Ok(entries) = self.0.entries() else {
+            return;
+        };
+        let prefix = std::format!(".{}.clear-", BLOBS_DIR);
+        for entry in entries.flatten() {
+            let Ok(name) = entry.file_name() else {
+                continue;
+            };
+            if name.starts_with(&prefix) {
+                let _ = self.0.remove_dir_all(&name);
+            }
+        }
+    }
 }
 
 impl Repository for FsRepository {
@@ -783,6 +845,8 @@ impl Repository for FsRepository {
 
         #[cfg(not(feature = "tokio"))]
         {
+            use std::io::Read;
+
             if blob.encoding == BlobEncoding::Xz {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Unsupported,
@@ -911,17 +975,32 @@ impl Repository for FsRepository {
     }
 
     async fn clear(&mut self) -> Result<(), Self::Error> {
-        // Removes all blobs one shard batch at a time, preserving the shard
-        // subdirectories themselves.
-        let mut cursor = self.cursor(false);
-        while let Some(item) = cursor.next().await {
-            let (id, encoding) = item?;
-            match self.0.remove_file(Self::path_for(&id, encoding)) {
-                Ok(()) => (),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-                Err(error) => return Err(error.into()),
-            }
+        // Atomically detach the whole blobs tree by renaming it aside, then
+        // delete it offline. Readers holding an open cursor keep iterating
+        // their pinned (renamed) generation; new operations see an empty
+        // repository immediately.
+        let sequence = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let trash = std::format!(
+            ".{}.clear-{}-{}",
+            BLOBS_DIR,
+            std::process::id(),
+            sequence
+        );
+        match self.0.rename(BLOBS_DIR, &self.0, &trash) {
+            Ok(()) => {
+                // Best effort: recreate an empty blobs directory right away.
+                // This races with concurrent writers, which lazily recreate
+                // it themselves, so a failure here is harmless.
+                let _ = self.0.create_dir(BLOBS_DIR);
+                self.0.remove_dir_all(&trash)?;
+            },
+            // Nothing to clear; still ensure the blobs directory exists.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let _ = self.0.create_dir(BLOBS_DIR);
+            },
+            Err(error) => return Err(error.into()),
         }
+        self.remove_stale_clear_dirs();
         Ok(())
     }
 

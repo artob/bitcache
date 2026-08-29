@@ -8,6 +8,13 @@ use core::{
 };
 use std::{string::String, vec::Vec};
 
+/// The name of the subdirectory holding all blob shards.
+///
+/// Keeping blobs under a dedicated subdirectory leaves the repository root
+/// free for other files (configuration, `.gitattributes`, etc.) and enables
+/// atomic whole-repository clearing by renaming this directory.
+pub(crate) const BLOBS_DIR: &str = "blobs";
+
 /// The number of leading hexadecimal characters of the blob ID used to name
 /// the shard subdirectory a blob is stored in.
 pub(crate) const SHARD_PREFIX_LEN: usize = 2;
@@ -44,14 +51,15 @@ impl core::fmt::Debug for DirCursor {
 }
 
 impl DirCursor {
-    /// Creates a cursor over the given repository directory.
-    pub fn new(dir: Dir, descending: bool) -> Self {
+    /// Creates a cursor over the given `blobs` directory (the directory that
+    /// directly contains the shard subdirectories).
+    pub fn new(blobs_dir: Dir, descending: bool) -> Self {
         let mut shards: Vec<String> = Self::shard_names().collect();
         if descending {
             shards.reverse();
         }
         Self {
-            dir: Some(dir),
+            dir: Some(blobs_dir),
             descending,
             error: None,
             shards: shards.into_iter(),
@@ -59,13 +67,26 @@ impl DirCursor {
         }
     }
 
-    /// Creates a cursor from a borrowed directory handle.
+    /// Creates a cursor over the blobs of the given repository root
+    /// directory (the directory containing the `blobs` subdirectory).
     ///
-    /// If the handle can't be cloned, the cursor yields that error as its
+    /// Holding an open handle to the `blobs` directory pins this cursor to
+    /// the current blob generation: an atomic clear (which renames `blobs`
+    /// away) won't disturb an iteration already in progress.
+    ///
+    /// If the repository has no `blobs` directory yet, the cursor is empty.
+    /// If the directory can't be opened, the cursor yields that error as its
     /// only item.
     pub fn open(dir: &Dir, descending: bool) -> Self {
-        match dir.try_clone() {
-            Ok(dir) => Self::new(dir, descending),
+        match dir.open_dir(BLOBS_DIR) {
+            Ok(blobs_dir) => Self::new(blobs_dir, descending),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self {
+                dir: None,
+                descending,
+                error: None,
+                shards: Vec::new().into_iter(),
+                batch: Vec::new().into_iter(),
+            },
             Err(error) => Self {
                 dir: None,
                 descending,

@@ -45,13 +45,16 @@ impl Drop for TestDir {
 fn blob_path(repository_path: &Path, id: &Id) -> PathBuf {
     let hex = id.to_hex();
     let hex = hex.as_str();
-    repository_path.join(&hex[..2]).join(format!("{hex}.xz"))
+    repository_path
+        .join("blobs")
+        .join(&hex[..2])
+        .join(format!("{hex}.xz"))
 }
 
 fn uncompressed_blob_path(repository_path: &Path, id: &Id) -> PathBuf {
     let hex = id.to_hex();
     let hex = hex.as_str();
-    repository_path.join(&hex[..2]).join(hex)
+    repository_path.join("blobs").join(&hex[..2]).join(hex)
 }
 
 fn xz_dictionary_size(path: &Path) -> u64 {
@@ -120,6 +123,11 @@ async fn test_fs_repository_metadata_permissions_and_duplicate_storage() {
     let temp_dir = TestDir::new();
     let repository_path = temp_dir.path().join("repository");
     let mut repository = FsRepository::create(repository_path.to_str().unwrap()).unwrap();
+    assert!(repository_path.join("blobs").is_dir());
+    assert_eq!(
+        fs::read_to_string(repository_path.join(".gitattributes")).unwrap(),
+        "blobs/** binary\n"
+    );
     let metadata_capabilities = repository.capabilities().blob_metadata();
     assert!(metadata_capabilities.created());
     assert!(metadata_capabilities.updated());
@@ -458,6 +466,16 @@ async fn test_expired_blobs_are_absent_but_clear_removes_them() {
 
     repository.clear().await.unwrap();
     assert!(!path.exists());
+    // The blobs directory is recreated after an atomic clear, and no
+    // detached `.blobs.clear-*` trees are left behind:
+    assert!(repository_path.join("blobs").is_dir());
+    assert!(fs::read_dir(&repository_path).unwrap().all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".blobs.clear-")
+    }));
 }
 
 #[tokio::test]
