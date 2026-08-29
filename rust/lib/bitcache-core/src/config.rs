@@ -116,6 +116,32 @@ pub enum Hashing {
     Blake3,
 }
 
+impl Hashing {
+    /// The canonical string form (`blake3`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Blake3 => "blake3",
+        }
+    }
+}
+
+impl core::fmt::Display for Hashing {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl core::str::FromStr for Hashing {
+    type Err = ConfigError;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "blake3" => Ok(Self::Blake3),
+            _ => Err(ConfigError::UnsupportedHashing(input.to_string())),
+        }
+    }
+}
+
 /// Defaults for the `bitcache put` command (`[bitcache.put]`).
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -285,6 +311,9 @@ pub enum ConfigError {
     /// The configuration format version is newer than this build supports.
     UnsupportedVersion(u64),
 
+    /// The named content-hashing algorithm isn't supported.
+    UnsupportedHashing(String),
+
     /// A capacity hint couldn't be parsed.
     InvalidCapacity(String),
 }
@@ -301,6 +330,11 @@ impl core::fmt::Display for ConfigError {
                 formatter,
                 "unsupported configuration version {} (this build supports up to {})",
                 version, CONFIG_VERSION
+            ),
+            Self::UnsupportedHashing(input) => write!(
+                formatter,
+                "unsupported hashing algorithm {:?} (expected \"blake3\")",
+                input
             ),
             Self::InvalidCapacity(input) => write!(formatter, "invalid capacity: {:?}", input),
         }

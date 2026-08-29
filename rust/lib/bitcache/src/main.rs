@@ -1,8 +1,8 @@
 // This is free and unencumbered software released into the public domain.
 
 use bitcache::{
-    Bytes, CompactOptions, Compression, Config, DynRepository, Id, IdEncoding, ListOptions,
-    ListOrder, PutOptions, Repository, RepositoryError, futures_util::StreamExt,
+    CompactOptions, Compression, Config, DynRepository, Id, IdEncoding, ListOptions, ListOrder,
+    PutOptions, Repository, RepositoryError, futures_util::StreamExt,
 };
 use clientele::{
     ColorChoiceExt, StandardOptions, SysexitsError,
@@ -43,8 +43,29 @@ enum Command {
     /// Initialize a new repository in `./.bitcache/`.
     ///
     /// Creates an empty repository in the `./.bitcache/` directory of the
-    /// current working directory; `$BITCACHE_URL` is ignored.
-    Init {},
+    /// current working directory; `$BITCACHE_URL` is ignored. The given
+    /// options are recorded in the created `.bitcache/config.toml`; an
+    /// existing configuration file is never overwritten.
+    Init {
+        /// The content-hashing algorithm to use (only `blake3`).
+        #[arg(long, alias = "hash", value_name = "ALGORITHM")]
+        hashing: Option<bitcache::Hashing>,
+
+        /// A capacity hint for how many blobs will be stored.
+        ///
+        /// A count with an optional `K`, `M`, `B`, or `T` suffix
+        /// (e.g., `100M` for one hundred million).
+        #[arg(long, value_name = "COUNT")]
+        capacity: Option<bitcache::Capacity>,
+
+        /// The default encoding for displaying blob IDs.
+        #[arg(long, value_name = "FORMAT")]
+        encoding: Option<IdEncoding>,
+
+        /// Skip creating the `.gitattributes` and `.gitignore` files.
+        #[arg(long)]
+        without_git: bool,
+    },
 
     /// List the IDs of the blobs in the repository, in ascending order.
     ///
@@ -355,10 +376,26 @@ pub async fn main() -> Result<(), SysexitsError> {
             Ok(())
         },
 
-        Command::Init {} => {
-            let _repository = bitcache_fs::FsRepository::create(".bitcache")?;
+        Command::Init {
+            hashing,
+            capacity,
+            encoding,
+            without_git,
+        } => {
+            let _repository = bitcache_fs::FsRepository::create_with_options(
+                ".bitcache",
+                bitcache_fs::CreateOptions::new().with_git(!without_git),
+            )?;
             if !std::path::Path::new(CONFIG_PATH).exists() {
-                std::fs::write(CONFIG_PATH, bitcache::DEFAULT_CONFIG_TOML)?;
+                let mut config = Config::default();
+                config.bitcache.hashing = hashing.unwrap_or_default();
+                config.bitcache.capacity = capacity;
+                config.bitcache.encoding = encoding;
+                let toml = config.to_toml().map_err(|error| {
+                    eprintln!("bitcache: {}", error);
+                    SysexitsError::EX_SOFTWARE
+                })?;
+                std::fs::write(CONFIG_PATH, toml)?;
             }
             Ok(())
         },
@@ -484,9 +521,7 @@ pub async fn main() -> Result<(), SysexitsError> {
                 return Err(SysexitsError::EX_UNAVAILABLE);
             }
             for path in paths {
-                let id = repository
-                    .put_from_path(&path, options.clone())
-                    .await?;
+                let id = repository.put_from_path(&path, options.clone()).await?;
                 println!("{}", format_id(&id, format));
             }
             Ok(())

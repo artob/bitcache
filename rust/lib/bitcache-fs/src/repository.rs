@@ -73,6 +73,32 @@ struct PhysicalBlob {
     encoding: BlobEncoding,
 }
 
+/// Options for creating a repository with [`FsRepository::create_with_options`].
+#[derive(Clone, Copy, Debug)]
+pub struct CreateOptions {
+    /// Whether to create the default Git metadata files (`.gitattributes`,
+    /// `.gitignore`) at the repository root (the default).
+    pub git: bool,
+}
+
+impl Default for CreateOptions {
+    fn default() -> Self {
+        Self { git: true }
+    }
+}
+
+impl CreateOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets whether to create the default Git metadata files.
+    pub fn with_git(mut self, git: bool) -> Self {
+        self.git = git;
+        self
+    }
+}
+
 /// A repository backed by a local filesystem directory.
 ///
 /// Blobs live under a dedicated `blobs` subdirectory, sharded into
@@ -106,13 +132,28 @@ struct PhysicalBlob {
 pub struct FsRepository(Dir, RepositoryCapabilities, #[cfg(windows)] PathBuf);
 
 impl FsRepository {
-    /// Creates or opens a new repository at the given directory path.
+    /// Creates or opens a new repository at the given directory path, with
+    /// default [`CreateOptions`].
     ///
     /// Ensures that the `blobs` subdirectory exists and that default
     /// `.gitattributes` (marking blobs as binary) and `.gitignore` (ignoring
     /// temporary artifacts) files are present; existing files are never
     /// overwritten.
     pub fn create(path: impl AsRef<Utf8Path>) -> Result<Self, RepositoryError> {
+        Self::create_with_options(path, CreateOptions::default())
+    }
+
+    /// Creates or opens a new repository at the given directory path.
+    ///
+    /// Ensures that the `blobs` subdirectory exists. Unless
+    /// [`CreateOptions::git`] is disabled, also ensures that default
+    /// `.gitattributes` (marking blobs as binary) and `.gitignore` (ignoring
+    /// temporary artifacts) files are present; existing files are never
+    /// overwritten.
+    pub fn create_with_options(
+        path: impl AsRef<Utf8Path>,
+        options: CreateOptions,
+    ) -> Result<Self, RepositoryError> {
         let path = path.as_ref();
         let dir = match Dir::open_ambient_dir(path, ambient_authority()) {
             Ok(dir) => dir,
@@ -123,8 +164,10 @@ impl FsRepository {
             Err(error) => return Err(error.into()),
         };
         dir.create_dir_all(BLOBS_DIR)?;
-        Self::create_file_if_absent(&dir, GIT_ATTRIBUTES_NAME, GIT_ATTRIBUTES)?;
-        Self::create_file_if_absent(&dir, GIT_IGNORE_NAME, GIT_IGNORE)?;
+        if options.git {
+            Self::create_file_if_absent(&dir, GIT_ATTRIBUTES_NAME, GIT_ATTRIBUTES)?;
+            Self::create_file_if_absent(&dir, GIT_IGNORE_NAME, GIT_IGNORE)?;
+        }
         Self::from_dir(path, dir)
     }
 
