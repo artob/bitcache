@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added `BlobMetadata::updated` to distinguish first insertion from reinsertion.
 
+## 0.0.5 - 2026-08-29
+
 ## 0.0.4 - 2026-08-28
 
 ## 0.0.3 - 2026-08-26

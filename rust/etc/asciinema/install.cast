@@ -29,7 +29,7 @@
 [0.260, "o", "e"]
 [0.094, "o", "\u001b[?2004l\r\r\n"]
 [0.076, "o", "\u001b[32m INFO\u001b[0m \u001b[1mresolve\u001b[0m\u001b[2m:\u001b[0m Resolving package: 'bitcache'\r\n"]
-[3.370, "o", "\u001b[33m WARN\u001b[0m The package bitcache v0.0.4 (aarch64-apple-darwin) has been downloaded from github.com\r\n\u001b[32m INFO\u001b[0m This will install the following binaries:\r\n\u001b[32m INFO\u001b[0m   - bitcache => /Users/jhacker/.cargo/bin/bitcache\r\n\u001b[32m INFO\u001b[0m Installing binaries...\r\n"]
+[3.370, "o", "\u001b[33m WARN\u001b[0m The package bitcache v0.0.5 (aarch64-apple-darwin) has been downloaded from github.com\r\n\u001b[32m INFO\u001b[0m This will install the following binaries:\r\n\u001b[32m INFO\u001b[0m   - bitcache => /Users/jhacker/.cargo/bin/bitcache\r\n\u001b[32m INFO\u001b[0m Installing binaries...\r\n"]
 [0.002, "o", "\u001b[32m INFO\u001b[0m Done in 3.387134542s\r\n"]
 [0.002, "o", "\u001b[1m\u001b[7m%\u001b[27m\u001b[1m\u001b[0m                                                                                                   \r \r"]
 [0.000, "o", "\r\u001b[0m\u001b[27m\u001b[24m\u001b[J\u001b[1m\u001b[32mjhacker@localhost:\u001b[34m~$\u001b[49m\u001b[0m\u001b[34m\u001b[39m \u001b[K"]

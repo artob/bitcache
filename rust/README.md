@@ -44,7 +44,7 @@
 cargo binstall -y bitcache
 ```
 
-<img width="100%" alt="Installation via cargo-binstall" src="{{ github.repository.link }}/raw/master/rust/etc/asciinema/install.gif"/>
+<img width="100%" alt="Installation via cargo-binstall" src="https://github.com/artob/bitcache/raw/master/rust/etc/asciinema/install.gif"/>
 
 #### Installation via [mise]
 
@@ -61,11 +61,11 @@ cargo install bitcache --locked --features=cli
 #### Downloading Release Tarballs
 
 ```bash
-wget https://github.com/artob/bitcache/releases/download/0.0.4/bitcache-aarch64-apple-darwin.tar.xz
-wget https://github.com/artob/bitcache/releases/download/0.0.4/bitcache-aarch64-unknown-linux-gnu.tar.xz
-wget https://github.com/artob/bitcache/releases/download/0.0.4/bitcache-x86_64-apple-darwin.tar.xz
-wget https://github.com/artob/bitcache/releases/download/0.0.4/bitcache-x86_64-pc-windows-msvc.zip
-wget https://github.com/artob/bitcache/releases/download/0.0.4/bitcache-x86_64-unknown-linux-gnu.tar.xz
+wget https://github.com/artob/bitcache/releases/download/0.0.5/bitcache-aarch64-apple-darwin.tar.xz
+wget https://github.com/artob/bitcache/releases/download/0.0.5/bitcache-aarch64-unknown-linux-gnu.tar.xz
+wget https://github.com/artob/bitcache/releases/download/0.0.5/bitcache-x86_64-apple-darwin.tar.xz
+wget https://github.com/artob/bitcache/releases/download/0.0.5/bitcache-x86_64-pc-windows-msvc.zip
+wget https://github.com/artob/bitcache/releases/download/0.0.5/bitcache-x86_64-unknown-linux-gnu.tar.xz
 ```
 
 ### Installation of the Library
