@@ -165,6 +165,9 @@ Options::
   -V, --version
           Print version information
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -209,6 +212,9 @@ Options:
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -241,6 +247,9 @@ Options:
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -270,6 +279,9 @@ Options:
 
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
+
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
 
   -h, --help
           Print help (see a summary with '-h')
@@ -321,6 +333,9 @@ Options:
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -353,6 +368,9 @@ Options:
 
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
+
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
 
   -h, --help
           Print help (see a summary with '-h')
@@ -391,6 +409,9 @@ Options:
 
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
+
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
 
   -h, --help
           Print help (see a summary with '-h')
@@ -438,6 +459,9 @@ Options:
       --without-git
           Skip creating the `.gitattributes` and `.gitignore` files
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -483,6 +507,9 @@ Options:
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -514,6 +541,9 @@ Options:
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -544,6 +574,9 @@ Options:
 
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
+
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
 
   -h, --help
           Print help (see a summary with '-h')
@@ -598,6 +631,9 @@ Options:
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -629,6 +665,9 @@ Options:
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
 ```
@@ -659,6 +698,9 @@ Options:
 
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
+
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
 
   -h, --help
           Print help (see a summary with '-h')

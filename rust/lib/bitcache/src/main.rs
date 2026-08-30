@@ -19,6 +19,10 @@ struct Options {
     #[clap(flatten)]
     flags: StandardOptions,
 
+    /// Change to this directory before executing the command.
+    #[arg(short = 'C', long, value_name = "DIR", global = true)]
+    cwd: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -356,6 +360,23 @@ fn parse_options(args: impl IntoIterator<Item = std::ffi::OsString>) -> Options 
     Options::from_arg_matches(&matches).unwrap_or_else(|error| error.exit())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::parse_options;
+    use std::path::PathBuf;
+
+    #[test]
+    fn parses_cwd_as_a_global_option() {
+        let before_command =
+            parse_options(["bitcache", "-C", "dir", "init"].map(std::ffi::OsString::from));
+        assert_eq!(before_command.cwd, Some(PathBuf::from("dir")));
+
+        let after_command =
+            parse_options(["bitcache", "init", "--cwd=dir"].map(std::ffi::OsString::from));
+        assert_eq!(after_command.cwd, Some(PathBuf::from("dir")));
+    }
+}
+
 /// The entry point for the `bitcache` command-line interface.
 #[tokio::main]
 pub async fn main() -> Result<(), SysexitsError> {
@@ -372,6 +393,9 @@ pub async fn main() -> Result<(), SysexitsError> {
 
     // Parse command-line options:
     let options = parse_options(args);
+    if let Some(cwd) = options.cwd {
+        std::env::set_current_dir(cwd)?;
+    }
     let flags = options.flags;
 
     // Print the program version, if requested:

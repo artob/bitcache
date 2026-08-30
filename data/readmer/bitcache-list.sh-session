@@ -36,5 +36,8 @@ Options:
   -v, --verbose...
           Enable verbose output (may be repeated for more verbosity)
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')

@@ -37,5 +37,8 @@ Options:
       --without-git
           Skip creating the `.gitattributes` and `.gitignore` files
 
+  -C, --cwd <DIR>
+          Change to this directory before executing the command
+
   -h, --help
           Print help (see a summary with '-h')
