@@ -20,6 +20,11 @@ into the public domain.`).
   backend. Others: `-heap`, `-git`, `-turso` (sqlite), `-valkey` (redis),
   `-opendal`, `-iroh` (mostly thinner).
 
+`README.md` is generated using Readmer (`readmer`) from Liquid Markdown
+templates in `../.config/readmer/` and `../data/readmer/`. The `Makefile`
+knows how to rebuild it. Avoid touching `README.md` or its input templates,
+focus on changes to the actual code and inline docs to go with it.
+
 ## Build / test
 
 ```sh
@@ -50,7 +55,7 @@ Smoke-test CLI: run `target/debug/bitcache` (init/put/list/get/compact/clear
   dynosaur must still compile). Method-level `where Self::Error:
   From<std::io::Error>` is OK.
 
-## bitcache-fs specifics
+## `bitcache-fs` specifics
 
 On-disk layout (no backwards compat guaranteed yet):
 
