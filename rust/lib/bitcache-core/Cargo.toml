@@ -65,4 +65,4 @@ fred = { workspace = true, optional = true }
 iroh = { workspace = true, optional = true }
 opendal = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
-toml = { version = "0.8", default-features = false, features = ["parse", "display"], optional = true }
+toml = { version = "1.1", default-features = false, features = ["parse", "display"], optional = true }
