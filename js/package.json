@@ -42,7 +42,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "latest",
-    "distrib": "^0.0.0",
+    "distrib": "^0.0.2",
     "tsup": "latest",
     "typescript": "^5.4.0"
   },
